@@ -70,6 +70,7 @@ def run_daily(
     mistral_api_key: str,
     max_holidays: int = 3,
     mistral_model: str = "mistral-small-latest",
+    with_photos: bool = False,
 ) -> List[int]:
     """Основной цикл: собрать праздники, сгенерировать и опубликовать посты.
 
@@ -79,6 +80,8 @@ def run_daily(
         mistral_api_key: API-ключ Mistral.
         max_holidays: Максимум праздников для публикации.
         mistral_model: Модель Mistral для генерации.
+        with_photos: Публиковать с картинками (нужен user-токен, иначе VK
+            ошибка 27 при загрузке фото с токеном сообщества).
 
     Returns:
         Список ID опубликованных постов.
@@ -110,8 +113,10 @@ def run_daily(
         try:
             logger.info("Обрабатываю праздник: %s", holiday.title)
             text = generator.generate_for_holiday(holiday)
-            # Скачиваем картинку, если есть
-            if holiday.image_url:
+            # Скачиваем картинку, только если включено WITH_PHOTOS.
+            # С токеном сообщества загрузка фото недоступна (VK error 27) —
+            # нужно постить текстом, пока не будет user-токена.
+            if with_photos and holiday.image_url:
                 photo_path = download_image(holiday.image_url)
             post_id = publisher.post(
                 message=text,
@@ -154,6 +159,7 @@ def main() -> int:
 
     max_holidays = int(os.getenv("MAX_HOLIDAYS", "3"))
     mistral_model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+    with_photos = os.getenv("WITH_PHOTOS", "false").lower() == "true"
 
     try:
         run_daily(
@@ -162,6 +168,7 @@ def main() -> int:
             mistral_api_key=mistral_api_key,
             max_holidays=max_holidays,
             mistral_model=mistral_model,
+            with_photos=with_photos,
         )
     except (AIError, VKError) as exc:
         logger.error("Ошибка выполнения: %s", exc)

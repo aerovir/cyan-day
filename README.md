@@ -93,6 +93,29 @@ python main.py
 pytest
 ```
 
+## Известные ограничения
+
+- **Картинки**: с токеном сообщества VK загрузка фото недоступна
+  (`photos.getWallUploadServer`, `upload.photo_wall` → ошибка 27). Бот постит
+  только текст (`WITH_PHOTOS=false`). Чтобы включить картинки — нужен
+  **user-токен владельца группы** (см. ниже), после чего ставим `WITH_PHOTOS=true`.
+- **Чтение стены**: `wall.get` / `wall.delete` тоже недоступны с токеном
+  сообщества (ошибка 27). Проверять посты лучше в браузере
+  (`vk.com/club<ID>`), а не через API.
+- **User-токен**: с 2024 VK ограничил выдачу новых user-токенов через OAuth.
+  Получение требует создания приложения и подтверждения. Инструкция — в
+  разделе ниже.
+
+### Как включить картинки (user-токен)
+
+1. Создай standalone-приложение на `https://id.vk.com/about/business/go`.
+2. Открой в браузере (под аккаунтом владельца группы):
+   ```
+   https://oauth.vk.com/authorize?client_id=<APP_ID>&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=offline,wall,photos,groups&response_type=token&v=5.199
+   ```
+3. Скопируй `access_token` из адресной строки.
+4. Впиши в `.env` как `VK_TOKEN`, поставь `WITH_PHOTOS=true`.
+
 ## GitHub Actions
 
 CI запускается на каждый push в `dev` и `main`:
@@ -109,4 +132,5 @@ CI запускается на каждый push в `dev` и `main`:
 | `POST_HOUR` / `POST_MINUTE` | Время ежедневного поста (по умолчанию 9:00) |
 | `MISTRAL_MODEL` | Модель Mistral (по умолчанию `mistral-small-latest`) |
 | `MAX_HOLIDAYS` | Сколько праздников публиковать в день (по умолчанию 3) |
+| `WITH_PHOTOS` | Публиковать с картинками. `false` — только текст (работает с токеном сообщества). `true` — с картинками (нужен user-токен, иначе VK ошибка 27) |
 | `LOG_LEVEL` | Уровень логирования |

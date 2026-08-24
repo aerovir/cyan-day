@@ -176,4 +176,6 @@ class HolidaysParser:
     def _clean_html(fragment: str) -> str:
         """Убрать HTML-теги и лишние пробелы из фрагмента."""
         text = re.sub(r"<[^>]+>", " ", fragment)
+        # Нормализуем неразрывные пробелы
+        text = text.replace("\xa0", " ").replace("&nbsp;", " ")
         return _WS_RE.sub(" ", text).strip()
