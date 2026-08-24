@@ -1,12 +1,17 @@
 services:
   bot:
-    build: .
+    build:
+      context: .
+      # Сборка в host-сети: DNS хоста резолвит pypi.org (иначе pip падает).
+      network: host
     container_name: ryabov_bot
     env_file:
       - .env
     restart: unless-stopped
-    # Без сетевой изоляции: контейнер имеет прямой доступ к интернету
-    # (VK, Mistral, calend.ru), как было решено.
+    # Рантайм в host-сети: bridge-NAT на машинах за серым IP/CGNAT не пропускает
+    # исходящий трафик контейнера (ConnectTimeout на все сервисы).
+    # В host-сети контейнер ходит в сеть как хост — работает надёжно.
+    network_mode: host
     volumes:
       - bot_logs:/app/logs
     # Логи бота
