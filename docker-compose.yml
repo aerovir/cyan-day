@@ -2,16 +2,13 @@ services:
   bot:
     build:
       context: .
-      # Сборка в host-сети: DNS хоста резолвит pypi.org (иначе pip падает).
-      network: host
     container_name: ryabov_bot
     env_file:
       - .env
     restart: unless-stopped
-    # Рантайм в host-сети: bridge-NAT на машинах за серым IP/CGNAT не пропускает
-    # исходящий трафик контейнера (ConnectTimeout на все сервисы).
-    # В host-сети контейнер ходит в сеть как хост — работает надёжно.
-    network_mode: host
+    # Отдельная сеть без общих подключений с другими Compose-проектами.
+    networks:
+      - ryabov_isolated
     volumes:
       - bot_logs:/app/logs
       - bot_state:/app/state
@@ -25,3 +22,10 @@ services:
 volumes:
   bot_logs:
   bot_state:
+
+networks:
+  ryabov_isolated:
+    name: ryabov_bot_isolated
+    driver: bridge
+    internal: false
+    attachable: false
