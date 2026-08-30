@@ -35,6 +35,22 @@ def _seconds_until(hour: int, minute: int) -> float:
     return (target - now).total_seconds()
 
 
+def _daily_options() -> dict[str, object]:
+    """Build run_daily options from the scheduler environment."""
+    from app.main import env_bool
+
+    return {
+        "vk_token": os.getenv("VK_TOKEN", ""),
+        "vk_group_id": int(os.getenv("VK_GROUP_ID", "0")),
+        "mistral_api_key": os.getenv("MISTRAL_API_KEY", ""),
+        "max_holidays": int(os.getenv("MAX_HOLIDAYS", "3")),
+        "mistral_model": os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
+        "with_photos": env_bool(os.getenv("WITH_PHOTOS")),
+        "registry_path": os.getenv("SOURCE_REGISTRY_DB", "state/sources.sqlite3"),
+        "registry_mode": os.getenv("SOURCE_REGISTRY_MODE", "auto").strip().lower(),
+    }
+
+
 def main() -> int:
     """Бесконечный цикл планировщика."""
     from app.main import run_daily
@@ -55,13 +71,7 @@ def main() -> int:
         if now.hour == hour and now.minute == minute:
             logger.info("Время постить!")
             try:
-                run_daily(
-                    vk_token=os.getenv("VK_TOKEN", ""),
-                    vk_group_id=int(os.getenv("VK_GROUP_ID", "0")),
-                    mistral_api_key=os.getenv("MISTRAL_API_KEY", ""),
-                    max_holidays=int(os.getenv("MAX_HOLIDAYS", "3")),
-                    mistral_model=os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
-                )
+                run_daily(**_daily_options())
             except Exception as exc:  # noqa: BLE001 — планировщик не должен падать
                 logger.error("Ошибка при выполнении: %s", exc)
             # Небольшая пауза, чтобы не сработать дважды

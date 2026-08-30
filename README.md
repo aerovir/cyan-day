@@ -7,8 +7,18 @@
 ## Как это работает
 
 ```
+SQLite SourceRegistry (включённые кодо-определённые адаптеры)
+        │  SourceItem: название, описание, картинка
+        ▼
+Дедупликация событий → ИИ Mistral (иронично-алкогольный стиль)
+        │
+        ▼
+VK API (публикует посты)
+
+При пустом/отсутствующем реестре режим auto сохраняет fallback на calend.ru.
+
 calend.ru (праздники на сегодня)
-        │  (название, описание, картинка)
+        │  (legacy fallback)
         ▼
 ИИ Mistral (переписывает описание в иронично-алкогольном стиле)
         │  (пост)
@@ -79,6 +89,24 @@ docker compose up -d --build
 ```bash
 docker logs -f ryabov_bot
 ```
+
+### Управление источниками
+
+Встроенный SQLite-реестр содержит только code-defined адаптеры. Сейчас поддерживается тип `calendru_day` (также принимается алиас `calendru-day`). Новые источники сначала добавляются выключенными, затем проверяются и включаются:
+
+```bash
+docker compose run --rm bot python -m app.source_admin \
+  --db /app/state/sources.sqlite3 add --name calendru \
+  --type calendru_day --url 'https://calend.ru/day/{date}/'
+docker compose run --rm bot python -m app.source_admin \
+  --db /app/state/sources.sqlite3 test calendru
+docker compose run --rm bot python -m app.source_admin \
+  --db /app/state/sources.sqlite3 enable calendru
+docker compose run --rm bot python -m app.source_admin \
+  --db /app/state/sources.sqlite3 list --enabled
+```
+
+Для отката используйте `disable`; логическое удаление требует `remove --confirm`. Реестр хранится в volume `bot_state`. Дедупликация выполняется только в рамках одного запуска и не заменяет ledger публикаций: повторный запуск может снова опубликовать тот же праздник.
 
 ### 4. Запуск без Docker
 

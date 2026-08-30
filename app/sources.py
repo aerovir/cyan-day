@@ -8,7 +8,7 @@ import socket
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from typing import Any, Mapping, Protocol, Sequence
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit
 
 import requests
 
@@ -61,8 +61,48 @@ class SourceItem:
         return asdict(self)
 
 
+def source_dedupe_key(item: SourceItem) -> tuple[str, ...]:
+    """Return a deterministic key for duplicate events in one collection.
+
+    A canonical event URL is preferred because two adapters can expose the
+    same underlying holiday.  External IDs are source-local unless the
+    adapter also provides a URL, so they remain scoped by ``source_id``.
+    """
+    event_date = _validate_day(item.event_date)
+    if item.url:
+        parsed = urlsplit(item.url.strip())
+        query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+        canonical_url = parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=parsed.netloc.lower(),
+            path=parsed.path.rstrip("/") or "/",
+            query=query,
+            fragment="",
+        ).geturl()
+        return (event_date, "url", canonical_url)
+    external_id = item.external_id.strip().lower()
+    if external_id:
+        return (event_date, "id", item.source_id.strip().lower(), external_id)
+    return (event_date, "title", item.source_id.strip().lower(), item.title.strip().casefold())
+
+
+def deduplicate_source_items(items: Sequence[SourceItem]) -> list[SourceItem]:
+    """Keep the first valid item for each :func:`source_dedupe_key`."""
+    unique: list[SourceItem] = []
+    seen: set[tuple[str, ...]] = set()
+    for item in items:
+        if not item.title.strip():
+            raise SourceError("source event title is required")
+        key = source_dedupe_key(item)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
+
+
 # Names used by early consumers/spec drafts.
 SourceEvent = SourceItem
+_source_dedupe_key = source_dedupe_key
 NormalizedEvent = SourceItem
 
 

@@ -1,8 +1,4 @@
-"""Оркестратор бота: собрать праздники → сгенерировать посты → опубликовать.
-
-Ежедневный запуск:
-    python main.py
-"""
+"""Оркестратор бота: собрать праздники → сгенерировать посты → опубликовать."""
 
 from __future__ import annotations
 
@@ -18,9 +14,22 @@ from dotenv import load_dotenv
 
 from .ai_generator import AIGenerator, AIError
 from .holidays_parser import HolidaysParser, Holiday
+from .source_registry import DEFAULT_DB_PATH, SourceRegistry
+from .sources import SourceError, SourceItem, deduplicate_source_items, validate_url
 from .vk_publisher import VKError, VKPublisher
 
 logger = logging.getLogger(__name__)
+
+SOURCE_REGISTRY_MODES = {"auto", "legacy", "registry"}
+IMAGE_HOSTS = ("calend.ru", "www.calend.ru")
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def env_bool(value: str | None, default: bool = False) -> bool:
+    """Parse common boolean environment values consistently."""
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def today_str() -> str:
@@ -37,31 +46,134 @@ def setup_logging(level: str = "INFO") -> None:
     )
 
 
-def download_image(url: str, timeout: int = 30) -> Optional[str]:
-    """Скачать картинку по URL во временный файл.
+def _holiday_to_item(holiday: Holiday, day: str) -> SourceItem:
+    """Adapt the legacy parser's result to the normalized source model."""
+    return SourceItem(
+        source_id="calendru_legacy",
+        external_id=holiday.url or holiday.title,
+        event_date=day,
+        title=holiday.title,
+        description=holiday.description,
+        url=holiday.url,
+        image_url=holiday.image_url,
+        category=holiday.category,
+    )
 
-    Args:
-        url: Абсолютная ссылка на картинку.
-        timeout: Таймаут запроса.
 
-    Returns:
-        Путь к временному файлу, или None при ошибке.
-    """
+def _legacy_items(parser: HolidaysParser, day: str) -> list[SourceItem]:
+    html = parser.fetch_day_page(day)
+    return [_holiday_to_item(item, day) for item in parser.parse_day_page(html)]
+
+
+def _collect_items(
+    day: str,
+    *,
+    registry_path: str | None = None,
+    registry_mode: str = "auto",
+) -> list[SourceItem]:
+    """Collect normalized events from the registry or the legacy source."""
+    if registry_mode not in SOURCE_REGISTRY_MODES:
+        raise SourceError(f"unsupported source registry mode: {registry_mode}")
+    parser = HolidaysParser()
+    if registry_mode == "legacy":
+        return _legacy_items(parser, day)
+
+    path = registry_path or DEFAULT_DB_PATH
+    if registry_mode == "auto" and path != ":memory:" and not os.path.exists(path):
+        return _legacy_items(parser, day)
+
     try:
-        resp = requests.get(url, timeout=timeout)
-        resp.raise_for_status()
-        # Определяем расширение по content-type
-        ctype = resp.headers.get("Content-Type", "")
-        ext = ".jpg"
-        if "png" in ctype:
-            ext = ".png"
-        fd, path = tempfile.mkstemp(suffix=ext)
-        with os.fdopen(fd, "wb") as f:
-            f.write(resp.content)
-        return path
-    except (requests.RequestException, OSError) as exc:
-        logger.warning("Не удалось скачать картинку %s: %s", url, exc)
+        with SourceRegistry(path) as registry:
+            adapters = registry.enabled_adapters()
+            if not adapters:
+                if registry_mode == "registry":
+                    logger.info("В реестре нет включённых источников")
+                    return []
+                return _legacy_items(parser, day)
+            items: list[SourceItem] = []
+            for record, adapter in adapters:
+                try:
+                    logger.info("Собираю источник %s", record.name)
+                    fetched = adapter.fetch(day)
+                    valid: list[SourceItem] = []
+                    for item in fetched:
+                        if not isinstance(item, SourceItem):
+                            logger.warning("Источник %s вернул неизвестный тип события", record.name)
+                            continue
+                        if item.event_date != day or not item.title.strip():
+                            logger.warning("Источник %s вернул событие с неверными данными", record.name)
+                            continue
+                        valid.append(item)
+                    logger.info("Источник %s вернул %d событий", record.name, len(valid))
+                    items.extend(valid)
+                except Exception as exc:  # noqa: BLE001 — isolate source failures
+                    logger.error(
+                        "Ошибка источника %s (%s): %s",
+                        record.name,
+                        type(exc).__name__,
+                        exc,
+                    )
+            return deduplicate_source_items(items)
+    except (OSError, SourceError):
+        if registry_mode == "auto" and path != ":memory:" and not os.path.exists(path):
+            return _legacy_items(parser, day)
+        raise
+
+
+def _download_image_safe(
+    url: str,
+    timeout: int = 30,
+    allowed_hosts: tuple[str, ...] = IMAGE_HOSTS,
+) -> Optional[str]:
+    """Download a bounded image without redirects, proxies, or private IPs."""
+    try:
+        normalized = validate_url(url, allowed_hosts=allowed_hosts, resolve=True)
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            response = session.get(
+                normalized,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=timeout,
+                allow_redirects=False,
+                stream=True,
+            )
+            if 300 <= response.status_code < 400:
+                raise SourceError("image URL redirects are not allowed")
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            if content_type not in {"image/jpeg", "image/png", "image/gif", "image/webp"}:
+                raise SourceError("image response has an unsupported content type")
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_IMAGE_BYTES:
+                raise SourceError("image response is too large")
+            ext = ".png" if content_type == "image/png" else ".jpg"
+            fd, path = tempfile.mkstemp(suffix=ext)
+            total = 0
+            try:
+                with os.fdopen(fd, "wb") as output:
+                    for chunk in response.iter_content(chunk_size=64 * 1024):
+                        total += len(chunk)
+                        if total > MAX_IMAGE_BYTES:
+                            raise SourceError("image response is too large")
+                        output.write(chunk)
+                return path
+            except Exception:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+                raise
+        finally:
+            session.close()
+    except (requests.RequestException, OSError, SourceError, ValueError) as exc:
+        logger.warning("Не удалось скачать безопасную картинку %s: %s", url, exc)
         return None
+
+
+def download_image(url: str, timeout: int = 30) -> Optional[str]:
+    """Backward-compatible safe image download helper."""
+    return _download_image_safe(url, timeout=timeout)
 
 
 def run_daily(
@@ -71,63 +183,38 @@ def run_daily(
     max_holidays: int = 3,
     mistral_model: str = "mistral-small-latest",
     with_photos: bool = False,
+    registry_path: str | None = None,
+    registry_mode: str = "auto",
 ) -> List[int]:
-    """Основной цикл: собрать праздники, сгенерировать и опубликовать посты.
-
-    Args:
-        vk_token: Токен VK-сообщества.
-        vk_group_id: Положительный ID группы VK.
-        mistral_api_key: API-ключ Mistral.
-        max_holidays: Максимум праздников для публикации.
-        mistral_model: Модель Mistral для генерации.
-        with_photos: Публиковать с картинками (нужен user-токен, иначе VK
-            ошибка 27 при загрузке фото с токеном сообщества).
-
-    Returns:
-        Список ID опубликованных постов.
-
-    Raises:
-        AIError: При ошибке генерации текста.
-        VKError: При ошибке публикации.
-    """
-    parser = HolidaysParser()
+    """Основной цикл: собрать праздники, сгенерировать и опубликовать посты."""
     generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
     publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
 
     today = today_str()
     logger.info("Собираю праздники на %s", today)
-    html = parser.fetch_day_page(today)
-    holidays = parser.parse_day_page(html)
+    items = _collect_items(today, registry_path=registry_path, registry_mode=registry_mode)
 
-    if not holidays:
+    if not items:
         logger.warning("Праздников на %s не найдено", today)
         return []
 
-    # Ограничиваем количество постов
-    selected = holidays[:max_holidays]
-    logger.info("Найдено праздников: %d, публикуем: %d", len(holidays), len(selected))
+    selected = items[:max_holidays]
+    logger.info("Найдено праздников: %d, публикуем: %d", len(items), len(selected))
 
     post_ids: List[int] = []
-    for holiday in selected:
+    for item in selected:
         photo_path = None
         try:
-            logger.info("Обрабатываю праздник: %s", holiday.title)
-            text = generator.generate_for_holiday(holiday)
-            # Скачиваем картинку, только если включено WITH_PHOTOS.
-            # С токеном сообщества загрузка фото недоступна (VK error 27) —
-            # нужно постить текстом, пока не будет user-токена.
-            if with_photos and holiday.image_url:
-                photo_path = download_image(holiday.image_url)
-            post_id = publisher.post(
-                message=text,
-                photo_path=photo_path,
-            )
+            logger.info("Обрабатываю праздник: %s", item.title)
+            text = generator.generate_for_holiday(item)
+            if with_photos and item.image_url:
+                photo_path = download_image(item.image_url)
+            post_id = publisher.post(message=text, photo_path=photo_path)
             post_ids.append(post_id)
         except (AIError, VKError) as exc:
-            logger.error("Не удалось опубликовать «%s»: %s", holiday.title, exc)
+            logger.error("Не удалось опубликовать «%s»: %s", item.title, exc)
             continue
         finally:
-            # Удаляем временный файл
             if photo_path:
                 try:
                     os.remove(photo_path)
@@ -159,7 +246,9 @@ def main() -> int:
 
     max_holidays = int(os.getenv("MAX_HOLIDAYS", "3"))
     mistral_model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
-    with_photos = os.getenv("WITH_PHOTOS", "false").lower() == "true"
+    with_photos = env_bool(os.getenv("WITH_PHOTOS"))
+    registry_path = os.getenv("SOURCE_REGISTRY_DB", DEFAULT_DB_PATH)
+    registry_mode = os.getenv("SOURCE_REGISTRY_MODE", "auto").strip().lower()
 
     try:
         run_daily(
@@ -169,8 +258,10 @@ def main() -> int:
             max_holidays=max_holidays,
             mistral_model=mistral_model,
             with_photos=with_photos,
+            registry_path=registry_path,
+            registry_mode=registry_mode,
         )
-    except (AIError, VKError) as exc:
+    except (AIError, VKError, SourceError, OSError) as exc:
         logger.error("Ошибка выполнения: %s", exc)
         return 1
 
