@@ -84,12 +84,12 @@ class AIGenerator:
             "Исходное утверждение является неподтверждённым, спорным или отвергнутым; не выдавай его за факт.\\n"
             "Используй только данные между SOURCE_FACTS и END_SOURCE_FACTS. Не выдумывай даты, имена, цифры, места или события.\\n"
             f"SOURCE_FACTS\\nЗаголовок: {title}\\nОписание: {description[:1500]}\\n{claim_text}\\nEND_SOURCE_FACTS\\n"
-            'Верни только JSON: {"label":"МИФ|РАЗБОР","body":"3-5 предложений",'
+            f'Верни только JSON без пояснений и ограждений: {{"label":"{label}","body":"3-5 предложений",'
             '"claims_used":["claim_id"],"unsupported_claims":[],"visual_brief":"без текста"}'
         )
-        raw = self.generate(prompt)
+        raw = self.generate(prompt, response_format="json_object")
         try:
-            data = json.loads(raw)
+            data = _parse_json_block(raw)
             actual = str(data["label"])
             body = str(data["body"]).strip()
             used = tuple(str(value) for value in data["claims_used"])
@@ -131,11 +131,13 @@ class AIGenerator:
         self.max_retries = max_retries
         self.timeout = timeout
 
-    def generate(self, user_prompt: str) -> str:
+    def generate(self, user_prompt: str, *, response_format: str | None = None) -> str:
         """Сгенерировать текст по пользовательскому промпту.
 
         Args:
             user_prompt: Текст запроса (с данными о празднике).
+            response_format: Передать в API как response_format.type
+                (например, "json_object" для структурного ответа).
 
         Returns:
             Сгенерированный текст.
@@ -158,6 +160,8 @@ class AIGenerator:
             ],
             "max_tokens": 500,
         }
+        if response_format:
+            payload["response_format"] = {"type": response_format}
 
         last_exc: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
@@ -210,6 +214,17 @@ class AIGenerator:
             return data["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError) as exc:
             raise AIError(f"Неожиданный формат ответа Mistral: {data}") from exc
+
+
+def _parse_json_block(raw: str) -> dict:
+    """Извлечь JSON-объект из ответа модели, включая ```json```-ограждения."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end <= start:
+            raise
+        return json.loads(raw[start : end + 1])
 
 
 def generate_alcohol_post(

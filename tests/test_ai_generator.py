@@ -132,3 +132,40 @@ class TestAIGenerator:
         result = g.generate("тест")
         assert result == "Успех"
         assert ai_generator.requests.post.call_count == 2
+
+
+class TestGenerateForStatus:
+    def _mock_raw(self, mocker, generator, raw):
+        return mocker.patch.object(generator, "generate", return_value=raw)
+
+    def test_parses_plain_json(self, mocker, generator):
+        raw = '{"label": "МИФ", "body": "текст", "claims_used": ["c1"], "unsupported_claims": [], "visual_brief": "без текста"}'
+        self._mock_raw(mocker, generator, raw)
+        result = generator.generate_for_status("unverified", "Т", "О", [{"claim_id": "c1", "text": "факт"}])
+        assert result.label == "МИФ" and result.body == "текст"
+
+    def test_parses_fenced_json(self, mocker, generator):
+        """Модель может обернуть JSON в ```json ... ```."""
+        raw = 'Вот результат:\n```json\n{"label": "МИФ", "body": "текст", "claims_used": ["c1"], "unsupported_claims": [], "visual_brief": "без текста"}\n```'
+        self._mock_raw(mocker, generator, raw)
+        result = generator.generate_for_status("unverified", "Т", "О", [{"claim_id": "c1", "text": "факт"}])
+        assert result.label == "МИФ" and result.body == "текст"
+
+    def test_rejects_wrong_label(self, mocker, generator):
+        raw = '{"label": "РАЗБОР", "body": "текст", "claims_used": [], "unsupported_claims": [], "visual_brief": "без текста"}'
+        self._mock_raw(mocker, generator, raw)
+        with pytest.raises(AIError):
+            generator.generate_for_status("unverified", "Т", "О")
+
+    def test_status_generation_requests_json_response_format(self, mocker, generator):
+        """Запрос к Mistral для статусной генерации должен включать response_format json_object."""
+        from app import ai_generator
+
+        mocker.patch.object(
+            ai_generator.requests,
+            "post",
+            return_value=_FakeResponse(200, {"choices": [{"message": {"content": '{"label": "МИФ", "body": "т", "claims_used": [], "unsupported_claims": [], "visual_brief": ""}'}}]}),
+        )
+        generator.generate_for_status("unverified", "Т", "О")
+        payload = ai_generator.requests.post.call_args.kwargs["json"]
+        assert payload.get("response_format") == {"type": "json_object"}

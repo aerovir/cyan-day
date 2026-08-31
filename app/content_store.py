@@ -253,7 +253,7 @@ class ContentStore:
     def claim_slot(self, local_date: str, slot_key: str, card: ContentCard) -> bool:
         key = self.idempotency_key(local_date,slot_key,card); now = _now(); self.conn.execute("BEGIN IMMEDIATE")
         try:
-            row = self.conn.execute("SELECT state FROM publication_ledger WHERE local_date=? AND slot_key=?", (local_date,slot_key)).fetchone()
+            row = self.conn.execute("SELECT state, attempts FROM publication_ledger WHERE local_date=? AND slot_key=?", (local_date,slot_key)).fetchone()
             if row and row["state"] in {"published","unknown"}: self.conn.execute("COMMIT"); return False
             self.conn.execute("INSERT OR REPLACE INTO publication_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (key,local_date,slot_key,card.card_id,card.revision,"publishing",(row["attempts"]+1 if row else 1),None,None,None,now,now)); self.conn.execute("COMMIT"); return True
         except Exception:

@@ -127,6 +127,17 @@ def test_slot_definitions_reseeded(tmp_path):
         assert keys == ["fact", "drink", "context", "custom_law", "trade", "myth", "analysis"]
 
 
+def test_claim_slot_retries_after_failure():
+    """Упавший слот можно забрать повторно; опубликованный — нельзя."""
+    with ContentStore(":memory:") as store:
+        card = store.import_card(make_card())
+        assert store.claim_slot("2026-08-31", "context", card) is True
+        store.mark_failed("2026-08-31", "context", "ошибка")
+        assert store.claim_slot("2026-08-31", "context", card) is True
+        store.mark_published("2026-08-31", "context", 1, "текст")
+        assert store.claim_slot("2026-08-31", "context", card) is False
+
+
 def test_recent_published_card_ids_returns_newest_first():
     with ContentStore(":memory:") as store:
         for card_id, local_date in (("card-1", "2026-08-30"), ("card-2", "2026-08-31")):
