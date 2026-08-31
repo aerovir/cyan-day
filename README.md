@@ -79,7 +79,7 @@ docker compose up -d --build
 Бот настроится на ежедневный запуск в **9:00** (или во время из `POST_HOUR`/`POST_MINUTE`).
 Планировщик (`scheduler.py`) держит контейнер живым и запускает `main.py` в заданное время.
 
-> **Про сеть:** контейнер работает в отдельной Docker bridge-сети `ryabov_bot_isolated`.
+> **Про сеть:** контейнер работает в отдельной Docker bridge-сети `cyan-day-isolated`.
 > Она не подключается к сетям других Compose-проектов, входящие порты не публикуются,
 > а контейнеру нужен только исходящий доступ к VK, Mistral и calend.ru. На сервере
 > проверьте, что обычная Docker bridge-сеть выпускает исходящий трафик через NAT.
@@ -92,7 +92,7 @@ docker compose up -d --build
 Просмотр логов:
 
 ```bash
-docker logs -f ryabov_bot
+docker logs -f cyan-day
 ```
 
 ### Управление источниками

@@ -2,13 +2,13 @@ services:
   bot:
     build:
       context: .
-    container_name: ryabov_bot
+    container_name: cyan-day
     env_file:
       - .env
     restart: unless-stopped
     # Отдельная сеть без общих подключений с другими Compose-проектами.
     networks:
-      - ryabov_isolated
+      - cyan_isolated
     volumes:
       - bot_logs:/app/logs
       - bot_state:/app/state
@@ -24,8 +24,8 @@ volumes:
   bot_state:
 
 networks:
-  ryabov_isolated:
-    name: ryabov_bot_isolated
+  cyan_isolated:
+    name: cyan-day-isolated
     driver: bridge
     internal: false
     attachable: false
