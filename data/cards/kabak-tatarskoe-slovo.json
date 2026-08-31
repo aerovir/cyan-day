@@ -1,0 +1,46 @@
+{
+  "image_url": "",
+  "card_id": "kabak-tatarskoe-slovo",
+  "calendar_day": "00-00",
+  "status": "disputed",
+  "title": "Кабак — слово татарское?",
+  "summary": "По версии Прыжова, «кабак» — татарское название постоялого двора, а первый кабак для опричников Иван IV построил на Балчуге.",
+  "tags": [
+    "topic.history",
+    "topic.customs"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "По Прыжову, слово «кабак» — татарское: так назывался постоялый двор, где продавались кушанья и напитки.",
+      "provenance_id": "kabak-tatarskoe-slovo-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Иван IV построил такой дом для попоек опричников на Балчуге.",
+      "provenance_id": "kabak-tatarskoe-slovo-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kabak-tatarskoe-slovo-src-1",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о распространении водки",
+      "quote": "У татар так назывался постоялый двор, где продавались кушанья и напитки"
+    },
+    {
+      "provenance_id": "kabak-tatarskoe-slovo-src-2",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о распространении водки",
+      "quote": "Для их попоек построил на Балчуге особый дом, называемый по-татарски «кабаком»."
+    }
+  ]
+}

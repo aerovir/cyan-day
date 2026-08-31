@@ -1,0 +1,46 @@
+{
+  "image_url": "",
+  "card_id": "potreblenie-1819-1826",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Казённая продажа и трезвость",
+  "summary": "При казённой продаже вина потребление сократилось с 18,5 млн вёдер в 1819 году до 12,1 млн в 1826-м.",
+  "tags": [
+    "topic.history",
+    "topic.trade"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "При казённой продаже вина потребление сократилось с 18,5 млн вёдер в 1819 году до 12,1 млн вёдер в 1826 году.",
+      "provenance_id": "potreblenie-1819-1826-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1807–1811 годах питейные сборы равнялись 29,1 млн руб. ассигнациями ежегодно — более четверти всего государственного бюджета.",
+      "provenance_id": "potreblenie-1819-1826-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "potreblenie-1819-1826-src-1",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел об Уставе о питейном сборе 1817 г.",
+      "quote": "наблюдался и процесс сокращения потребления вина населением с 18,5 млн вед. в 1819 г. до 12,1 млн вед. в 1826 г."
+    },
+    {
+      "provenance_id": "potreblenie-1819-1826-src-2",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел о начале XIX века",
+      "quote": "В 1807-1811 гг. питейные сборы равнялись 29,1 млн р. асс. ежегодно, что составляло более четверти всего государственного бюджета того времени."
+    }
+  ]
+}

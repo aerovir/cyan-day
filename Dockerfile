@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Потом код
 COPY app/ ./app/
+COPY data/ ./data/
 COPY main.py .
 COPY scheduler.py .
 

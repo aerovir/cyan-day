@@ -1,0 +1,45 @@
+{
+  "image_url": "",
+  "card_id": "bunt-prizyvnikov",
+  "calendar_day": "00-00",
+  "status": "unverified",
+  "priority": 60,
+  "title": "Бунт призывников у винного склада",
+  "summary": "В 1914 году из-за «сухого закона» в Кузнецке несколько тысяч мобилизованных взяли винный склад штурмом, а гуси напились из ручья, куда просочился спирт.",
+  "tags": [
+    "topic.history",
+    "topic.customs"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "В 1914 году из-за «сухого закона» в Кузнецке произошёл «бунт призывников»: несколько тысяч мобилизованных выбили ворота и взяли винный склад штурмом.",
+      "provenance_id": "bunt-prizyvnikov-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Пролитый спирт просочился в ручей Картас, и гуси, испив воды, «шатались и падали от дурмана».",
+      "provenance_id": "bunt-prizyvnikov-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "bunt-prizyvnikov-src-1",
+      "source_type": "museum",
+      "title": "Вековая история качества НЛВЗ",
+      "author": "Культура.РФ (платформа Artefact)",
+      "url": "https://ar.culture.ru/en/subject/vekovaya-istoriya-kachestva-nlvz",
+      "locator": "абзац «С водочным заводом связана…»",
+      "quote": "Несколько тысяч мобилизованных двинулись к зданию завода, вырвали телеграфный столб, им, как тараном выбили ворота чугунной ограды, смяли заслон полиции и взяли склад штурмом."
+    },
+    {
+      "provenance_id": "bunt-prizyvnikov-src-2",
+      "source_type": "museum",
+      "title": "Вековая история качества НЛВЗ",
+      "author": "Культура.РФ (платформа Artefact)",
+      "url": "https://ar.culture.ru/en/subject/vekovaya-istoriya-kachestva-nlvz",
+      "locator": "абзац «С водочным заводом связана…»",
+      "quote": "затем все пролитое просочилось в ручей Картас, и «гуси по берегам той реки, испив воды, шатались и падали от дурмана»."
+    }
+  ]
+}

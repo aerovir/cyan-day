@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
+from typing import Any, Mapping
 
 import requests
 
@@ -42,8 +45,71 @@ class AIError(Exception):
     """Ошибка взаимодействия с AI-сервисом."""
 
 
+@dataclass(frozen=True)
+class GeneratedContent:
+    label: str
+    body: str
+    claims_used: tuple[str, ...]
+    unsupported_claims: tuple[str, ...]
+    visual_brief: str = ""
+
+
+_STATUS_LABELS = {
+    "unverified": "МИФ",
+    "disputed": "РАЗБОР",
+    "refuted": "РАЗБОР",
+    "rejected": "МИФ",
+}
+
+
 class AIGenerator:
-    """Клиент Mistral для генерации текстов в заданном стиле."""
+    """Клиент Mistral для текстов и редакционного контента."""
+
+    def generate_for_status(
+        self,
+        status: str,
+        title: str,
+        description: str,
+        claims: list[Mapping[str, Any]] | None = None,
+    ) -> GeneratedContent:
+        """Generate explicitly labelled copy for non-verified material."""
+        try:
+            label = _STATUS_LABELS[status]
+        except KeyError as exc:
+            raise AIError(f"unsupported editorial status: {status}") from exc
+        claim_text = "\\n".join(f"- {claim.get('claim_id')}: {claim.get('text', '')}" for claim in claims or [])
+        prompt = (
+            "Паблик «Синий день календаря». Сохрани ироничный стиль и лёгкий алкогольный юмор.\\n"
+            f"Статус материала: {status}. Обязательная маркировка: {label}.\\n"
+            "Исходное утверждение является неподтверждённым, спорным или отвергнутым; не выдавай его за факт.\\n"
+            "Используй только данные между SOURCE_FACTS и END_SOURCE_FACTS. Не выдумывай даты, имена, цифры, места или события.\\n"
+            f"SOURCE_FACTS\\nЗаголовок: {title}\\nОписание: {description[:1500]}\\n{claim_text}\\nEND_SOURCE_FACTS\\n"
+            'Верни только JSON: {"label":"МИФ|РАЗБОР","body":"3-5 предложений",'
+            '"claims_used":["claim_id"],"unsupported_claims":[],"visual_brief":"без текста"}'
+        )
+        raw = self.generate(prompt)
+        try:
+            data = json.loads(raw)
+            actual = str(data["label"])
+            body = str(data["body"]).strip()
+            used = tuple(str(value) for value in data["claims_used"])
+            unsupported = tuple(str(value) for value in data["unsupported_claims"])
+            brief = str(data.get("visual_brief", "")).strip()
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            raise AIError("Mistral returned invalid content JSON") from exc
+        known = {str(claim.get("claim_id")) for claim in claims or []}
+        if actual != label or not body or unsupported or any(value not in known for value in used):
+            raise AIError("Mistral content failed editorial validation")
+        return GeneratedContent(actual, body, used, unsupported, brief)
+
+    def generate_for_content(self, card: Mapping[str, Any]) -> GeneratedContent:
+        return self.generate_for_status(
+            str(card.get("status", "unverified")),
+            str(card.get("title", "")),
+            str(card.get("summary", "")),
+            list(card.get("claims", [])),
+        )
+
 
     def __init__(
         self,

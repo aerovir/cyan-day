@@ -1,45 +1,44 @@
-"""Планировщик ежедневного запуска бота.
-
-Заменяет системный cron внутри контейнера: ждёт наступления заданного
-времени (POST_HOUR:POST_MINUTE) и запускает main.py. Держит контейнер живым.
-"""
-
+"""Планировщик публикаций календаря и контентных слотов."""
 from __future__ import annotations
 
 import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from app.content_store import SLOT_DEFINITIONS
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    stream=sys.stdout,
-)
+load_dotenv()
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s", stream=sys.stdout)
 logger = logging.getLogger("scheduler")
+DEFAULT_SLOTS = "09:00,10:30,12:00,13:30,15:00,17:00,19:00"
+RECENT_WINDOW_DAYS = 7
+SLOT_KEYS = tuple(key for key, _time, _requirements, _strict in SLOT_DEFINITIONS)
 
 
 def _seconds_until(hour: int, minute: int) -> float:
-    """Сколько секунд до ближайшего наступления hour:minute."""
     now = datetime.now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
-        # Если время уже прошло — берём следующий день
-        from datetime import timedelta
         target += timedelta(days=1)
     return (target - now).total_seconds()
 
 
 def _daily_options() -> dict[str, object]:
-    """Build run_daily options from the scheduler environment."""
     from app.main import env_bool
-
     return {
+        "content_db": os.getenv("CONTENT_DB", "state/content.sqlite3"),
+        "content_mode": os.getenv("CONTENT_MODE", "legacy").strip().lower(),
+        "daily_posts": int(os.getenv("DAILY_POSTS", "7")),
+        "bot_timezone": os.getenv("BOT_TIMEZONE", "Europe/Moscow"),
+        "slot_times": os.getenv("SLOT_TIMES", DEFAULT_SLOTS),
+        "max_catchup_slots": int(os.getenv("MAX_CATCHUP_SLOTS", "7")),
+        "schedule_poll_seconds": int(os.getenv("SCHEDULE_POLL_SECONDS", "20")),
+        "allow_card_reuse": env_bool(os.getenv("ALLOW_CARD_REUSE")),
         "vk_token": os.getenv("VK_TOKEN", ""),
         "vk_group_id": int(os.getenv("VK_GROUP_ID", "0")),
         "mistral_api_key": os.getenv("MISTRAL_API_KEY", ""),
@@ -51,32 +50,83 @@ def _daily_options() -> dict[str, object]:
     }
 
 
+def _slot_times() -> tuple[str, ...]:
+    values = tuple(value.strip() for value in os.getenv("SLOT_TIMES", DEFAULT_SLOTS).split(",") if value.strip())
+    if len(values) != 7:
+        raise ValueError("SLOT_TIMES must contain exactly seven times")
+    for value in values:
+        datetime.strptime(value, "%H:%M")
+    return values
+
+
+def _recent_card_ids(content_db: str, local_date: str, days: int = RECENT_WINDOW_DAYS) -> tuple[str, ...]:
+    """Карточки, опубликованные за последние дни — чтобы не повторять их."""
+    from app.content_store import ContentStore
+    since = (date.fromisoformat(local_date) - timedelta(days=days)).isoformat()
+    with ContentStore(content_db) as store:
+        return tuple(store.recent_published_card_ids(since))
+
+
+def _run_cards_once() -> None:
+    from app.main import env_bool, plan_content_day, run_content_slot
+    timezone_name = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
+    tz = ZoneInfo(timezone_name)
+    now = datetime.now(timezone.utc)
+    local_date = now.astimezone(tz).date().isoformat()
+    content_db = os.getenv("CONTENT_DB", "state/content.sqlite3")
+    recent = () if env_bool(os.getenv("ALLOW_CARD_REUSE")) else _recent_card_ids(content_db, local_date)
+    plan_content_day(local_date, content_db=content_db, recent_card_ids=recent)
+    # Догонка: публикуем просроченные слоты, но не больше MAX_CATCHUP_SLOTS за цикл;
+    # опубликованные в прошлых циклах слоты повторно не считаются (claim_slot вернёт False).
+    published = 0
+    max_catchup = int(os.getenv("MAX_CATCHUP_SLOTS", "7"))
+    for index, local_time in enumerate(_slot_times()):
+        due = datetime.combine(datetime.fromisoformat(local_date).date(), datetime.strptime(local_time, "%H:%M").time(), tz).astimezone(timezone.utc)
+        if now < due:
+            continue
+        if published >= max_catchup:
+            logger.info("Лимит догонки %d достигнут, остальные слоты отложены до следующего цикла", max_catchup)
+            break
+        post_id = run_content_slot(
+            vk_token=os.getenv("VK_TOKEN", ""),
+            vk_group_id=int(os.getenv("VK_GROUP_ID", "0")),
+            mistral_api_key=os.getenv("MISTRAL_API_KEY", ""),
+            local_date=local_date,
+            slot_key=SLOT_KEYS[index],
+            content_db=content_db,
+            mistral_model=os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
+            with_photos=env_bool(os.getenv("WITH_PHOTOS")),
+            recent_card_ids=recent,
+        )
+        if post_id is not None:
+            published += 1
+
+
 def main() -> int:
-    """Бесконечный цикл планировщика."""
     from app.main import run_daily
-
-    hour = int(os.getenv("POST_HOUR", "9"))
-    minute = int(os.getenv("POST_MINUTE", "0"))
-
-    logger.info("Планировщик запущен. Бот будет работать ежедневно в %02d:%02d", hour, minute)
-
+    if os.getenv("CONTENT_MODE", "legacy").strip().lower() == "cards":
+        logger.info("Планировщик карточек запущен: 7 слотов, timezone=%s", os.getenv("BOT_TIMEZONE", "Europe/Moscow"))
+        while True:
+            try:
+                _run_cards_once()
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Ошибка планировщика карточек: %s", exc)
+            time.sleep(max(1, int(os.getenv("SCHEDULE_POLL_SECONDS", "20"))))
+    hour = int(os.getenv("POST_HOUR", "9")); minute = int(os.getenv("POST_MINUTE", "0"))
+    logger.info("Планировщик legacy запущен. Постинг в %02d:%02d", hour, minute)
     while True:
         wait = _seconds_until(hour, minute)
         logger.info("До следующего запуска: %.0f секунд", wait)
-        # Держим контейнер живым, не жжём CPU
         time.sleep(min(wait, 3600))
-
-        # Если дошли до времени — запускаем
         now = datetime.now()
         if now.hour == hour and now.minute == minute:
             logger.info("Время постить!")
             try:
-                run_daily(**_daily_options())
-            except Exception as exc:  # noqa: BLE001 — планировщик не должен падать
+                options = _daily_options()
+                run_daily(**{key: options[key] for key in ("vk_token", "vk_group_id", "mistral_api_key", "max_holidays", "mistral_model", "with_photos", "registry_path", "registry_mode")})
+            except Exception as exc:  # noqa: BLE001
                 logger.error("Ошибка при выполнении: %s", exc)
-            # Небольшая пауза, чтобы не сработать дважды
             time.sleep(60)
-
     return 0
 
 

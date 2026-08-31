@@ -1,0 +1,46 @@
+{
+  "image_url": "",
+  "card_id": "aktsiz-stavka",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Четыре копейки с градуса",
+  "summary": "Ставка акциза выросла с 4 копеек с градуса безводного спирта в 1863 году до 10 копеек в 1897-м, но Россия не была лидером по питейному акцизу.",
+  "tags": [
+    "topic.trade",
+    "topic.law"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Ставка акциза выросла с 4 копеек с градуса безводного спирта в 1863 году до 10 копеек в 1897 году.",
+      "provenance_id": "aktsiz-stavka-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1897 году питейный акциз на душу населения составлял: в Англии 6 руб. 84 коп., во Франции 4 руб. 69 коп., в России — 2 руб. 21 коп.",
+      "provenance_id": "aktsiz-stavka-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "aktsiz-stavka-src-1",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел об акцизной системе",
+      "quote": "составляя в начале акцизной системы (т. е. в 1863 г.) 4 к. с градуса безводного спирта, в 1897 г. достигала уже 10 к."
+    },
+    {
+      "provenance_id": "aktsiz-stavka-src-2",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел об акцизной системе",
+      "quote": "На каждую душу населения в 1897 г. питейный акциз составлял: в Англии - 6 р. 84 к., во Франции - 4 р. 69 к., в России же -2 р. 21 к."
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "image_url": "",
+  "card_id": "mendeleev-40-degrees-refuted",
+  "calendar_day": "01-31",
+  "status": "refuted",
+  "priority": 60,
+  "title": "«40 градусов» придумало правительство, а не Менделеев",
+  "summary": "Канонические 40 градусов появились задолго до работ Менделеева и были законодательно закреплены в 1868 году.",
+  "tags": [
+    "topic.people",
+    "topic.history",
+    "topic.law"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Знаменитая «идеальная» концентрация в 40 градусов появилась благодаря решению правительства, когда Менделееву едва исполнилось 9 лет.",
+      "provenance_id": "mendeleev-40-degrees-refuted-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "С 1840-х годов минимальная крепость водки в розничной торговле для северных и средних губерний России составляла 38°; два градуса добавляли на «усушку-утруску».",
+      "provenance_id": "mendeleev-40-degrees-refuted-src-1"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Крепость водки в 40° законодательно установлена решением Государственного совета и утверждена Александром II 18 июня 1868 года.",
+      "provenance_id": "mendeleev-40-degrees-refuted-src-2"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "mendeleev-40-degrees-refuted-src-1",
+      "source_type": "academic",
+      "title": "Директор Музея Менделеева СПбГУ: Дмитрий Иванович водку не изобретал",
+      "author": "СПбГУ",
+      "publication_year": 2017,
+      "url": "https://spbu.ru/news-events/novosti/direktor-muzeya-mendeleeva-spbgu-dmitriy-ivanovich-vodku-ne-izobretal",
+      "locator": "абзац с цитатой Игоря Дмитриева",
+      "quote": "Знаменитая «идеальная» концентрация в 40 градусов появилась благодаря решению правительства, когда Менделееву едва исполнилось 9 лет."
+    },
+    {
+      "provenance_id": "mendeleev-40-degrees-refuted-src-2",
+      "source_type": "academic",
+      "title": "Директор Музея Менделеева СПбГУ: Дмитрий Иванович водку не изобретал",
+      "author": "СПбГУ",
+      "publication_year": 2017,
+      "url": "https://spbu.ru/news-events/novosti/direktor-muzeya-mendeleeva-spbgu-dmitriy-ivanovich-vodku-ne-izobretal",
+      "locator": "врезка «38°»",
+      "quote": "минимальная крепость водки в раздробительной (розничной) торговле для северных и средних губерний России с 1840-х годов."
+    },
+    {
+      "provenance_id": "mendeleev-40-degrees-refuted-src-3",
+      "source_type": "academic",
+      "title": "Директор Музея Менделеева СПбГУ: Дмитрий Иванович водку не изобретал",
+      "author": "СПбГУ",
+      "publication_year": 2017,
+      "url": "https://spbu.ru/news-events/novosti/direktor-muzeya-mendeleeva-spbgu-dmitriy-ivanovich-vodku-ne-izobretal",
+      "locator": "подпись под врезкой «38°»",
+      "quote": "Два градуса добавляли на «усушку-утруску», поэтому при производстве водка должна быть 40-градусной."
+    },
+    {
+      "provenance_id": "mendeleev-40-degrees-refuted-src-4",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел «Введение»",
+      "quote": "Привычная современному жителю нашей страны крепость для водки в 400 была законодательно установлена решением Государственного совета и утверждена царем Александром II 18 июня 1868 г."
+    }
+  ]
+}

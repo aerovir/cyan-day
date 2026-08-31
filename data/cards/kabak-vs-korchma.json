@@ -1,0 +1,47 @@
+{
+  "image_url": "",
+  "card_id": "kabak-vs-korchma",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "В кабаке пить можно, а есть нельзя",
+  "summary": "Первый кабак возник в 1552 году; его главное отличие от корчмы — запрет на еду и горячие закуски.",
+  "tags": [
+    "topic.history",
+    "topic.customs"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Первый кабак возник на Руси в 1552 году; в нём было запрещено подавать горячие закуски.",
+      "provenance_id": "kabak-vs-korchma-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Главное отличие кабака от корчмы: в кабаке пить можно, а есть нельзя.",
+      "provenance_id": "kabak-vs-korchma-src-2"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kabak-vs-korchma-src-1",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в допетровской России»",
+      "quote": "Первый кабак возник на Руси в 1552 г. В нем было запрещено подавать горячие закуски (именно горячие, а не закуски вообще)"
+    },
+    {
+      "provenance_id": "kabak-vs-korchma-src-2",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о появлении кабаков и откупа",
+      "quote": "Но их отличие от корчмы в том, что в кабаке пить можно, а есть нельзя."
+    }
+  ]
+}

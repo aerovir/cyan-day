@@ -1,0 +1,47 @@
+{
+  "image_url": "",
+  "card_id": "kron-danielson",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Пивовары с имперским гербом",
+  "summary": "В 1795 году придворный пекарь Крон и его друг Даниельсон открыли пивной завод, а в 1818-м получили право ставить имперский герб.",
+  "tags": [
+    "topic.people",
+    "drink.beer",
+    "topic.production"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "В 1795 году придворный пекарь Абрахам Крон и Фридрих Даниельсон не без помощи императрицы открыли завод по производству пива.",
+      "provenance_id": "kron-danielson-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1818 году за высококачественную продукцию их наградили золотыми медалями «За полезное» с правом ставить на продукции имперский герб.",
+      "provenance_id": "kron-danielson-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kron-danielson-src-1",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Российской империи»",
+      "quote": "В 1795 г. Абрахам Фридрих Крон - придворный пекарь при Екатерине II и его друг Фридрих Николаус Даниельсон не без помощи императрицы открыли завод по производству пива"
+    },
+    {
+      "provenance_id": "kron-danielson-src-2",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Российской империи»",
+      "quote": "В 1818 г. двух друзей и партнеров за производство высококачественной продукции наградили золотыми медалями «За полезное». За свои заслуги они могли ставить на своей продукции имперский герб."
+    }
+  ]
+}

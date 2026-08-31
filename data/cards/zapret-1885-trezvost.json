@@ -1,0 +1,62 @@
+{
+  "image_url": "",
+  "card_id": "zapret-1885-trezvost",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "Правила 1885 года и общества трезвости",
+  "summary": "Закон 1885 года запрещал обществам продавать крепкие напитки; Синод ещё в 1859-м благословил священников содействовать трезвости.",
+  "tags": [
+    "topic.law",
+    "topic.customs"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "14 мая 1885 года принят закон, запрещавший городским и сельским обществам продажу крепких алкогольных напитков.",
+      "provenance_id": "zapret-1885-trezvost-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Ещё в 1859 году Св. Синод благословил священников содействовать воздержанию от употребления вина.",
+      "provenance_id": "zapret-1885-trezvost-src-2"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Нормативной базой борьбы с пьянством стали «Правила о раздробительной продаже крепких напитков» от 14 мая 1885 года и указ Св. Синода от 10 августа 1889 года «О содействии возникновению обществ трезвости».",
+      "provenance_id": "zapret-1885-trezvost-src-2"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "zapret-1885-trezvost-src-1",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Российской империи»",
+      "quote": "14 мая 1885 г. был принят закон, запрещавший городским и сельским обществам продажу крепких алкогольных напитков."
+    },
+    {
+      "provenance_id": "zapret-1885-trezvost-src-2",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "Еще в 1859 г. Св. Синод благословил священников «живым примером собственной жизни и частым проповеданием в церкви Божей о пользе воздержания, содействовать возникшей в некоторых городских и сельских сословиях решимости воздержаться от употребления вина»"
+    },
+    {
+      "provenance_id": "zapret-1885-trezvost-src-3",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "указ Св. Синода от 10 августа 1889 г. «О содействии возникновению обществ трезвости»"
+    }
+  ]
+}

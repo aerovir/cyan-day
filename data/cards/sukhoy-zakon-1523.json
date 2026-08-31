@@ -1,0 +1,31 @@
+{
+  "image_url": "",
+  "card_id": "sukhoy-zakon-1523",
+  "calendar_day": "00-00",
+  "status": "disputed",
+  "title": "Московский сухой закон 1523 года",
+  "summary": "Свидетельства 1523 года говорят: в Москве был введён сухой закон, и алкоголь дозволялся только по большим праздникам.",
+  "tags": [
+    "topic.law",
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Свидетельства 1523 года отмечают, что в Москве был введён сухой закон, и потребление алкоголя было дозволено только по большим праздникам.",
+      "provenance_id": "sukhoy-zakon-1523-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "sukhoy-zakon-1523-src-1",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац об Иване III",
+      "quote": "Свидетельства 1523 г. отмечают, что в Москве был введен сухой закон, и потребление алкоголя было дозволено только по большим праздникам."
+    }
+  ]
+}

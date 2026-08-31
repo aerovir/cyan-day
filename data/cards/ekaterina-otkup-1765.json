@@ -1,0 +1,31 @@
+{
+  "image_url": "",
+  "card_id": "ekaterina-otkup-1765",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Откупа Екатерины II",
+  "summary": "Манифестом от 1 августа 1765 года Екатерина II ввела откупную систему повсеместно — кроме Сибири.",
+  "tags": [
+    "topic.trade",
+    "topic.law"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Екатерина II манифестом от 1 августа 1765 года ввела откупную систему вместо казённой повсеместно, кроме Сибири.",
+      "provenance_id": "ekaterina-otkup-1765-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "ekaterina-otkup-1765-src-1",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел о XVIII веке",
+      "quote": "Стремление увеличить питейные сборы побудило императрицу Екатерину II манифестом от 1 августа 1765 г. ввести откупную систему вместо казённой повсеместно, кроме Сибири."
+    }
+  ]
+}

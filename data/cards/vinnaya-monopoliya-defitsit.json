@@ -1,0 +1,30 @@
+{
+  "image_url": "",
+  "card_id": "vinnaya-monopoliya-defitsit",
+  "calendar_day": "00-00",
+  "status": "disputed",
+  "title": "Монополия, которая приносила дефицит",
+  "summary": "По мнению исследователей, винная монополия не приносила казне финансовой выгоды, а наоборот — приводила к дефициту.",
+  "tags": [
+    "topic.trade"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "По мнению авторов исследования, винная монополия в России не приносила финансовой выгоды, а приводила к дефициту казны.",
+      "provenance_id": "vinnaya-monopoliya-defitsit-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "vinnaya-monopoliya-defitsit-src-1",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "раздел «1. Государственная винная монополия: о содержании понятия и целях»",
+      "quote": "винная монополия в России не приносила финансовой выгоды, скорее наоборот, приводила к дефициту казны, подталкивая правительство к поиску смешанных моделей правового регулирования «питейской» сферы"
+    }
+  ]
+}

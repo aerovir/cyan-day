@@ -1,0 +1,46 @@
+{
+  "image_url": "",
+  "card_id": "pryzhov-biografiya",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Иван Прыжов: историк кабаков и каторжанин",
+  "summary": "Автор знаменитой «Истории кабаков» участвовал в убийстве студента Иванова и был приговорён к 12 годам каторги.",
+  "tags": [
+    "topic.people",
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Иван Гаврилович Прыжов (1827–1885) — автор знаменитой «Истории кабаков в России в связи с историей русского народа».",
+      "provenance_id": "pryzhov-biografiya-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Прыжов участвовал в убийстве студента Иванова 1 ноября 1869 года и был приговорён к лишению всех прав, 12 годам каторги и вечному поселению в Сибири.",
+      "provenance_id": "pryzhov-biografiya-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "pryzhov-biografiya-src-1",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о биографии",
+      "quote": "Наиболее известными стали его труды: «Нищие на святой Руси», «История кабаков в связи с историей русского народа», «Малороссия (Южная Русь) в истории ее литературы с XI по XVIII вв.»"
+    },
+    {
+      "provenance_id": "pryzhov-biografiya-src-2",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о биографии",
+      "quote": "Прыжов принял участие в убийстве студента Иванова 1 ноября 1869 г. Подвергнут аресту и приговорен к лишению всех прав, а также к двенадцати годам каторжных работ и вечному поселению в Сибири."
+    }
+  ]
+}

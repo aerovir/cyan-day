@@ -1,0 +1,45 @@
+{
+  "image_url": "",
+  "card_id": "vodka-araby",
+  "calendar_day": "00-00",
+  "status": "disputed",
+  "title": "Водка, которую открыли арабы",
+  "summary": "По Прыжову, водку открыли арабы: в XIII веке в Европе она была лекарством и продавалась в аптеках, а на Русь попала от генуэзцев в 1398 году.",
+  "tags": [
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "По мнению Прыжова, водку открыли арабы; в XIII веке в Европе она была лекарством и до XVI века продавалась в аптеках.",
+      "provenance_id": "vodka-araby-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1398 году от генуэзцев водка переходит в южную Русь, а в первой половине XVI века распространяется по северо-востоку.",
+      "provenance_id": "vodka-araby-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "vodka-araby-src-1",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о распространении водки",
+      "quote": "В XIII в. водка является в Европе лекарством и употребляется в качестве эссенции до XVI в., продаваясь в аптеках."
+    },
+    {
+      "provenance_id": "vodka-araby-src-2",
+      "source_type": "academic",
+      "title": "Иван Прыжов: исторические этапы регулирования оборота алкоголя в России",
+      "author": "Луцик С. С.",
+      "publication_year": 2013,
+      "url": "https://cyberleninka.ru/article/n/ivan-pryzhov-istoricheskie-etapy-regulirovaniya-oborota-alkogolya-v-rossii",
+      "locator": "абзац о распространении водки",
+      "quote": "В конце XIV в. (1398 г.) от генуэзцев, торговавших с Переяславом и Ромном, водка переходит в южную Русь, и затем в первой половине XVI в. распространяется по всему северо-востоку."
+    }
+  ]
+}

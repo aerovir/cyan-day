@@ -1,0 +1,78 @@
+{
+  "image_url": "",
+  "card_id": "kabatskaya-reforma-1651",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "Кабацкая реформа 1651 года",
+  "summary": "Указы 1651–1652 годов отменили откупа, запретили частные кабаки и винокурни и ввели казённую торговлю питием.",
+  "tags": [
+    "topic.law",
+    "topic.trade",
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Именной царский указ декабря 1651 года ограничивал: в городах и больших сёлах можно было иметь только по одному кружечному двору.",
+      "provenance_id": "kabatskaya-reforma-1651-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1651 году откупная система отменялась, частные кабаки запрещались, вводилась казённая торговля питием.",
+      "provenance_id": "kabatskaya-reforma-1651-src-1"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Указом 1652 года закрыты все частные винокурни, на частное производство хлебного вина наложено вето.",
+      "provenance_id": "kabatskaya-reforma-1651-src-1"
+    },
+    {
+      "claim_id": "c4",
+      "text": "Эта система с небольшими изменениями существовала вплоть до 1863 года.",
+      "provenance_id": "kabatskaya-reforma-1651-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kabatskaya-reforma-1651-src-1",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "подраздел «Кабацкая реформа 1651-1652 гг.»",
+      "quote": "Нормативно зафиксирован в принятом в декабре 1651 г. Именном царском указе об ограничении возможности иметь в городах и больших селах только по одному кружечному двору"
+    },
+    {
+      "provenance_id": "kabatskaya-reforma-1651-src-2",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "подраздел «Кабацкая реформа 1651-1652 гг.»",
+      "quote": "Именно в 1651 г. был принят Именной указ, по которому откупная система отменялась, частные кабаки запрещались, вводилась казенная торговля питием."
+    },
+    {
+      "provenance_id": "kabatskaya-reforma-1651-src-3",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "подраздел «Кабацкая реформа 1651-1652 гг.»",
+      "quote": "Предусмотренные указом 1651 г. запреты уже в следующем году специальным именным указом были дополнены еще и закрытием всех частных винокурен, на частное производство хлебного вина налагалось veto"
+    },
+    {
+      "provenance_id": "kabatskaya-reforma-1651-src-4",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "подраздел «Кабацкая реформа 1651-1652 гг.»",
+      "quote": "Эта система с небольшими изменениями существовала вплоть до 1863 г."
+    }
+  ]
+}

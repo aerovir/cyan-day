@@ -1,0 +1,61 @@
+{
+  "image_url": "",
+  "card_id": "khmel-985",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Хмель из Лаврентьевской летописи",
+  "summary": "Впервые о хмеле на Руси говорится в Лаврентьевской летописи 985 года; в XI веке появились корчмы с пивом и мёдом.",
+  "tags": [
+    "drink.beer",
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Впервые о хмеле на Руси говорится в Лаврентьевской летописи 985 года; использование хмеля кардинально изменило пивоварение.",
+      "provenance_id": "khmel-985-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В XI веке на Руси появились корчмы — заведения, где пили пиво и мёд, общались, слушали песни и музыку.",
+      "provenance_id": "khmel-985-src-1"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Владельцы корчем платили пошлины «корчмити» — об этом говорит уставная грамота 1150 года смоленского князя Ростислава Мстиславовича.",
+      "provenance_id": "khmel-985-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "khmel-985-src-1",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Средневековой Руси»",
+      "quote": "Впервые о нем говорится в Лаврентьевской летописи 985 г."
+    },
+    {
+      "provenance_id": "khmel-985-src-2",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Средневековой Руси»",
+      "quote": "В XI в. на Руси стали появляться питейные заведения - корчмы, в которых люди проводили время за едой, распитием пива и меда, общались, слушали песни и музыку."
+    },
+    {
+      "provenance_id": "khmel-985-src-3",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Средневековой Руси»",
+      "quote": "Владельцы корчем платили пошлины - «корчмити» за возможность продавать еду и напитки. Об это говорится в уставной грамоте 1150 г. Смоленского князя Ростислава Мстиславовича"
+    }
+  ]
+}

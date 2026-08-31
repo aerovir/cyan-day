@@ -1,0 +1,46 @@
+{
+  "image_url": "",
+  "card_id": "vodochnaya-monopoliya-termin",
+  "calendar_day": "00-00",
+  "status": "rejected",
+  "title": "«Водочная монополия» — некорректный термин",
+  "summary": "До 1895 года монополия касалась розничной продажи хлебного вина, а «водка» была лишь названием сорта крепостью 38–45°.",
+  "tags": [
+    "topic.trade",
+    "topic.law"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Долгое время монополия была исключительным правом государства на розничную продажу хлебного вина, и только с 1895 года закреплено право на розничную торговлю спиртом и водкой в казённых лавках.",
+      "provenance_id": "vodochnaya-monopoliya-termin-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Под вином в дореволюционной России понимался напиток крепостью 40°, а «водка» была названием сорта с содержанием спирта от 38° до 45°.",
+      "provenance_id": "vodochnaya-monopoliya-termin-src-2"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "vodochnaya-monopoliya-termin-src-1",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "раздел «1. Государственная винная монополия: о содержании понятия и целях»",
+      "quote": "Длительное время монополия представляла исключительное право государства осуществлять розничную продажу хлебного вина, и только с 1895 г. за государством было закреплено исключительное право на розничную торговлю спиртом и водкой в казенных лавках"
+    },
+    {
+      "provenance_id": "vodochnaya-monopoliya-termin-src-2",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел «Введение»",
+      "quote": "Содержание спирта в нем первоначально варьировалось от 380 до 450."
+    }
+  ]
+}

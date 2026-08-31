@@ -1,0 +1,63 @@
+{
+  "image_url": "",
+  "card_id": "tobolsk-popoyki",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "Праздник, после которого не оставалось ни одного штофа",
+  "summary": "На съезжие праздники крестьяне Тобольской губернии устраивали трёх-четырёхдневные попойки; к концу праздника водка заканчивалась во всей округе.",
+  "tags": [
+    "topic.customs",
+    "topic.history",
+    "drink.vodka"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "На съезжие праздники крестьяне Тобольской губернии начинали «поголовную попойку», которая продолжалась 3–4 дня.",
+      "provenance_id": "tobolsk-popoyki-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "К концу праздника «не оставалось ни одного штофа водки во всей округе».",
+      "provenance_id": "tobolsk-popoyki-src-1"
+    },
+    {
+      "claim_id": "c3",
+      "text": "В Тобольской губернии в 1902 году «было выпито на 3 миллиона рублей», в 1906-м — уже на 10 миллионов.",
+      "provenance_id": "tobolsk-popoyki-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "tobolsk-popoyki-src-1",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "Крестьяне «начинали с утра поголовную попойку. Старые и молодые, мужчины и женщины поголовно пьяные ходили вереницей из одного дома в другой. Так продолжалось 3-4 дня и ночи."
+    },
+    {
+      "provenance_id": "tobolsk-popoyki-src-2",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "К концу праздника не оставалось ни одного штофа водки во всей округе"
+    },
+    {
+      "provenance_id": "tobolsk-popoyki-src-3",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "в 1902 году «было выпито на 3 миллиона рублей, в 1903 — на 7 мил., в 1904 — на 8 мил., в 1905 — на 9 мил., в 1906 — на 10 мил.»"
+    }
+  ]
+}

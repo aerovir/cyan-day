@@ -1,0 +1,62 @@
+{
+  "image_url": "",
+  "card_id": "kazennaya-prodazha-1894",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "Казённая продажа питей и 40% бюджета",
+  "summary": "Положением 1894 года введена казённая продажа питей; к 1912 году питейная прибыль достигла 40% доходов бюджета.",
+  "tags": [
+    "topic.trade",
+    "topic.production"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Казённая продажа питей введена Положением от 6 июня 1894 года; в 1895–1902 годах казна постепенно сосредоточила продажу и отчасти ректификацию вина.",
+      "provenance_id": "kazennaya-prodazha-1894-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "В 1904 году питейная прибыль составляла 546 705 тыс. руб., в 1912 году — 819 788 тыс. руб., около 40% доходной части бюджета.",
+      "provenance_id": "kazennaya-prodazha-1894-src-2"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Казённая винная монополия просуществовала до 1914 года, когда с началом Первой мировой войны был введён сухой закон.",
+      "provenance_id": "kazennaya-prodazha-1894-src-2"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kazennaya-prodazha-1894-src-1",
+      "source_type": "academic",
+      "title": "Винная монополия в России XVII-XIX вв.: фискальный и (или) социальный интересы",
+      "author": "Михеева И. В., Пронина Н. В., Логинова А. С.",
+      "publication_year": 2022,
+      "url": "https://cyberleninka.ru/article/n/vinnaya-monopoliya-v-rossii-xvii-xix-vv-fiskalnyy-i-ili-sotsialnyy-interesy",
+      "locator": "подраздел «Акцизная система 1863-1894 гг. и государственная винная монополия 1895 г.»",
+      "quote": "что и было введено Положением о казенной продаже питей от 6 июня 1894 г. Заметим, что в период 1895-1902 гг. в руках казны шло постепенное сосредоточение продажи и отчасти очистки (ректификации) вина (спирта)"
+    },
+    {
+      "provenance_id": "kazennaya-prodazha-1894-src-2",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел о казённой винной монополии",
+      "quote": "Уже в 1904 году питейная прибыль насчитывала 546705 тыс. руб., а в 1912 году - 819788 тыс. руб., что составляло около 40% доходной части государственного бюджета"
+    },
+    {
+      "provenance_id": "kazennaya-prodazha-1894-src-3",
+      "source_type": "academic",
+      "title": "Государство и алкоголь в дореволюционной России. Единство и борьба противоположностей",
+      "author": "Мариупольский А. М.",
+      "publication_year": 2014,
+      "url": "https://cyberleninka.ru/article/n/gosudarstvo-i-alkogol-v-dorevolyutsionnoy-rossii-edinstvo-i-borba-protivopolozhnostey",
+      "locator": "раздел об итогах",
+      "quote": "Казённая винная монополия просуществовала в России до 1914 года, когда в связи с началом Первой мировой войны на всей территории страны был введён сухой закон."
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "image_url": "",
+  "card_id": "mendeleev-vodka-refuted",
+  "calendar_day": "01-31",
+  "status": "refuted",
+  "priority": 60,
+  "title": "Менделеев не изобретал водку",
+  "summary": "31 января считается «днём рождения водки» по заблуждению: в этот день в 1865 году Менделеев защитил диссертацию о соединениях спирта с водой.",
+  "tags": [
+    "topic.people",
+    "topic.history"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "31 января в России по заблуждению считается днём рождения русской водки — в этот день в 1865 году Менделеев защитил диссертацию «О соединении спирта с водою».",
+      "provenance_id": "mendeleev-vodka-refuted-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Учёный никогда не разрабатывал рецептур для водки.",
+      "provenance_id": "mendeleev-vodka-refuted-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "mendeleev-vodka-refuted-src-1",
+      "source_type": "academic",
+      "title": "Директор Музея Менделеева СПбГУ: Дмитрий Иванович водку не изобретал",
+      "author": "СПбГУ",
+      "publication_year": 2017,
+      "url": "https://spbu.ru/news-events/novosti/direktor-muzeya-mendeleeva-spbgu-dmitriy-ivanovich-vodku-ne-izobretal",
+      "locator": "вводный абзац",
+      "quote": "31 января в России по большому заблуждению считается днем рождения русской водки, поскольку именно в этот день в 1865 году профессор Петербургского университета Дмитрий Иванович Менделеев защитил диссертацию «О соединении спирта с водою»"
+    },
+    {
+      "provenance_id": "mendeleev-vodka-refuted-src-2",
+      "source_type": "academic",
+      "title": "Директор Музея Менделеева СПбГУ: Дмитрий Иванович водку не изобретал",
+      "author": "СПбГУ",
+      "publication_year": 2017,
+      "url": "https://spbu.ru/news-events/novosti/direktor-muzeya-mendeleeva-spbgu-dmitriy-ivanovich-vodku-ne-izobretal",
+      "locator": "вводный абзац",
+      "quote": "Но мало кто знает, что ученый никогда не разрабатывал рецептур для водки"
+    }
+  ]
+}

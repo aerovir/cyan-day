@@ -1,0 +1,32 @@
+{
+  "image_url": "",
+  "card_id": "taynye-shinkari",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "title": "Тайные шинкари и вино в долг",
+  "summary": "Тайные шинкари торговали вином круглые сутки: в долг, под заклад и в обмен на предметы первой необходимости.",
+  "tags": [
+    "topic.customs",
+    "topic.trade",
+    "drink.vodka"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Тайные шинкари отпускали вино в долг, под заклад и в обмен на разные предметы, зачастую предметы первой необходимости в крестьянском быту.",
+      "provenance_id": "taynye-shinkari-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "taynye-shinkari-src-1",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "Тайные же шинкари, являясь заинтересованными в большем сбыте вина, разными ухищрениями стараются привлечь к себе покупателей, для чего отпускают им вино в долг, под заклад и в обмен на разные предметы, зачастую являющиеся предметами первой необходимости в крестьянском быту"
+    }
+  ]
+}

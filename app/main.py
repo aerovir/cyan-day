@@ -7,12 +7,14 @@ import os
 import sys
 import tempfile
 from datetime import date
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 import requests
 from dotenv import load_dotenv
 
 from .ai_generator import AIGenerator, AIError
+from .content_planner import build_plan
+from .content_store import PLAN_VERSION, ContentCard, ContentError, ContentStore, DEFAULT_CONTENT_DB
 from .holidays_parser import HolidaysParser, Holiday
 from .source_registry import DEFAULT_DB_PATH, SourceRegistry
 from .sources import SourceError, SourceItem, deduplicate_source_items, validate_url
@@ -20,9 +22,85 @@ from .vk_publisher import VKError, VKPublisher
 
 logger = logging.getLogger(__name__)
 
+CONTENT_LABELS = {"verified": "ФАКТ", "unverified": "МИФ", "disputed": "РАЗБОР", "refuted": "РАЗБОР", "rejected": "МИФ"}
 SOURCE_REGISTRY_MODES = {"auto", "legacy", "registry"}
 IMAGE_HOSTS = ("calend.ru", "www.calend.ru")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _verified_text(card: ContentCard) -> str:
+    """Render verified claims without allowing a model to alter facts."""
+    claims = " ".join(claim["text"] for claim in card.claims)
+    return f"{CONTENT_LABELS[card.status]}: {claims or card.summary}\nИсточник: {card.provenance[0].get('title', '') if card.provenance else 'редакционная карточка'}"
+
+
+def run_content_slot(
+    vk_token: str,
+    vk_group_id: int,
+    mistral_api_key: str,
+    local_date: str,
+    slot_key: str,
+    *,
+    content_db: str = DEFAULT_CONTENT_DB,
+    mistral_model: str = "mistral-small-latest",
+    with_photos: bool = False,
+    recent_card_ids: Iterable[str] = (),
+) -> int | None:
+    """Generate and publish one planned editorial slot exactly once."""
+    with ContentStore(content_db) as store:
+        card = store.planned_card(local_date, slot_key)
+        if card is None:
+            cards = store.list_cards(local_date[5:])
+            planned = build_plan(local_date, cards, recent_card_ids)
+            store.save_plan(local_date, planned)
+            card = store.planned_card(local_date, slot_key)
+        if card is None or not store.claim_slot(local_date, slot_key, card):
+            return None
+    photo_path = None
+    try:
+        generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
+        if card.status == "verified":
+            text = _verified_text(card)
+        else:
+            generated = generator.generate_for_content(card.packet())
+            text = f"{generated.label}: {generated.body}"
+        if with_photos and card.image_url:
+            # Картинки карточек задаёт редактор, поэтому без allowlist хостов;
+            # остальные SSRF-проверки (https, без редиректов, без приватных IP) остаются.
+            photo_path = download_image(card.image_url, allowed_hosts=())
+        publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
+        post_id = publisher.post(message=text, photo_path=photo_path)
+        with ContentStore(content_db) as store:
+            store.mark_published(local_date, slot_key, post_id, text)
+        return post_id
+    except (AIError, VKError, OSError, ContentError) as exc:
+        with ContentStore(content_db) as store:
+            store.mark_failed(local_date, slot_key, str(exc))
+        logger.error("Не удалось опубликовать слот %s: %s", slot_key, exc)
+        return None
+    finally:
+        if photo_path:
+            try:
+                os.remove(photo_path)
+            except OSError:
+                pass
+
+
+def plan_content_day(
+    local_date: str,
+    *,
+    content_db: str = DEFAULT_CONTENT_DB,
+    recent_card_ids: Iterable[str] = (),
+) -> list[dict[str, object]]:
+    """Create or refresh the seven-slot plan for a local calendar date."""
+    with ContentStore(content_db) as store:
+        existing = store.get_plan(local_date)
+        if existing and existing[0]["plan_version"] == PLAN_VERSION:
+            return existing
+        # Устаревшая версия плана (старая сетка слотов) — перегенерируем
+        planned = build_plan(local_date, store.list_cards(local_date[5:]), recent_card_ids)
+        store.save_plan(local_date, planned)
+        return store.get_plan(local_date)
 
 
 def env_bool(value: str | None, default: bool = False) -> bool:
@@ -171,9 +249,20 @@ def _download_image_safe(
         return None
 
 
-def download_image(url: str, timeout: int = 30) -> Optional[str]:
-    """Backward-compatible safe image download helper."""
-    return _download_image_safe(url, timeout=timeout)
+def download_image(
+    url: str,
+    timeout: int = 30,
+    allowed_hosts: tuple[str, ...] | None = None,
+) -> Optional[str]:
+    """Backward-compatible safe image download helper.
+
+    ``allowed_hosts=None`` применяет allowlist по умолчанию (calend.ru);
+    пустой кортеж означает «без ограничения хостов» (остальные
+    SSRF-проверки сохраняются).
+    """
+    if allowed_hosts is None:
+        allowed_hosts = IMAGE_HOSTS
+    return _download_image_safe(url, timeout=timeout, allowed_hosts=allowed_hosts)
 
 
 def run_daily(

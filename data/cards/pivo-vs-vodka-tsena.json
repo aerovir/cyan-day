@@ -1,0 +1,33 @@
+{
+  "image_url": "",
+  "card_id": "pivo-vs-vodka-tsena",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "Пиво было дороже водки?",
+  "summary": "Ведро водки стоило 5 рублей, ведро пива — 1 рубль, но в пересчёте на градус алкоголя пиво обходилось вдвое дороже.",
+  "tags": [
+    "drink.beer",
+    "drink.vodka",
+    "topic.trade"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Ведро водки стоило 5 руб., ведро пива — 1 руб., что в пересчёте на градус алкоголя составляло соответственно 12,5 и 25 коп.",
+      "provenance_id": "pivo-vs-vodka-tsena-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "pivo-vs-vodka-tsena-src-1",
+      "source_type": "academic",
+      "title": "Пивоварение в экономике России: от Средневековья до Первой мировой войны",
+      "author": "Оришев А. Б.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pivovarenie-v-ekonomike-rossii-ot-srednevekovya-do-pervoy-mirovoy-voyny",
+      "locator": "раздел «Развитие пивоварения в Российской империи»",
+      "quote": "Ведро водки стоило 5 руб., ведро пива — 1 руб., что в пересчете на градус алкоголя составляло соответственно 12,5 и 25 коп."
+    }
+  ]
+}

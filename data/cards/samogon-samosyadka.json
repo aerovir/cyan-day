@@ -1,0 +1,63 @@
+{
+  "image_url": "",
+  "card_id": "samogon-samosyadka",
+  "calendar_day": "00-00",
+  "status": "verified",
+  "priority": 60,
+  "title": "«Самосядка»: экономика сухого закона",
+  "summary": "При «сухом законе» Первой мировой в Тобольской губернии расцвело самогоноварение; пуд муки за 1,5 рубля давал 6 рублей барыша.",
+  "tags": [
+    "topic.customs",
+    "topic.production",
+    "drink.vodka"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "С введением «сухого закона» в годы Первой мировой войны потребление алкоголя первоначально снизилось, но выросло винокурение местным населением.",
+      "provenance_id": "samogon-samosyadka-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Самогон в Тобольской губернии получил оригинальное название — «самосядка».",
+      "provenance_id": "samogon-samosyadka-src-1"
+    },
+    {
+      "claim_id": "c3",
+      "text": "Пуд ржаной муки стоил 1 руб. 50 коп., из него выходило 5 бутылок самогона — барыш 6 рублей с пуда.",
+      "provenance_id": "samogon-samosyadka-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "samogon-samosyadka-src-1",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "аннотация",
+      "quote": "С введением «сухого закона» в годы Первой мировой войны потребление алкоголя населением империи первоначально снижается, но в то же время происходит рост винокурения местным населением."
+    },
+    {
+      "provenance_id": "samogon-samosyadka-src-2",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "Ответной реакцией стало производство самогона, который в Тобольской губернии получил оригинальное название — «самосядка»."
+    },
+    {
+      "provenance_id": "samogon-samosyadka-src-3",
+      "source_type": "academic",
+      "title": "Пьянство как социальная девиация и борьба за народную трезвость во второй половине XIX — начале XX в.",
+      "author": "Неупокоев И. В., Фёдоров С. Г.",
+      "publication_year": 2023,
+      "url": "https://cyberleninka.ru/article/n/pyanstvo-kak-sotsialnaya-deviatsiya-i-borba-za-narodnuyu-trezvost-vo-vtoroy-polovine-xix-nachale-xx-v-na-primere-krestyanskoy",
+      "locator": "раздел «Результаты исследования»",
+      "quote": "«Пуд ржаной муки стоит 1 р. 50 к. Из него выходит самосядки 5 бутылок. Продают ее обыкновенно по 1 р. 50 к. Следовательно, за 5 бутылок получают 7 р. 50 к. Значит от одного пуда получается барыша 6 рублей."
+    }
+  ]
+}

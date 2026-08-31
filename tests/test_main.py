@@ -1,6 +1,8 @@
 """Тесты оркестратора main.py: сбор → генерация → публикация."""
 import pytest
 
+from app.ai_generator import GeneratedContent
+from app.content_store import ContentStore
 from app.holidays_parser import Holiday
 from app.main import run_daily, today_str
 from app.sources import SourceItem
@@ -210,3 +212,140 @@ def test_env_bool_accepts_common_values():
     assert all(env_bool(value) for value in ("1", "true", "YES", "on"))
     assert not env_bool("false")
     assert env_bool(None, default=True)
+
+
+def make_content_card(card_id="card-1", status="verified", image_url=""):
+    return {
+        "card_id": card_id,
+        "calendar_day": "08-31",
+        "title": "День гранёного стакана",
+        "summary": "Стакан как символ эпохи.",
+        "status": status,
+        "tags": ["topic.context"],
+        "claims": [{"claim_id": "c1", "text": "Стакан стал символом СССР.", "provenance_id": "src-1"}],
+        "provenance": [{"provenance_id": "src-1", "source_type": "academic", "title": "Энциклопедия стаканов"}],
+        "image_url": image_url,
+    }
+
+
+class TestRunContentSlot:
+    def test_run_content_slot_publishes_verified_card_once(self, mocker, tmp_path):
+        from app.main import run_content_slot
+
+        content_db = str(tmp_path / "content.sqlite3")
+        with ContentStore(content_db) as store:
+            store.import_card(make_content_card())
+        pub_mock = mocker.Mock()
+        pub_mock.post.return_value = 123
+        mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+
+        post_id = run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db)
+
+        assert post_id == 123
+        message = pub_mock.post.call_args.kwargs["message"]
+        assert message.startswith("ФАКТ:") and "Стакан стал символом СССР." in message
+        # Повторный запуск того же слота не публикует повторно
+        assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db) is None
+        assert pub_mock.post.call_count == 1
+
+    def test_run_content_slot_generates_labelled_copy_for_unverified(self, mocker, tmp_path):
+        from app.main import run_content_slot
+
+        content_db = str(tmp_path / "content.sqlite3")
+        with ContentStore(content_db) as store:
+            store.import_card(make_content_card(status="unverified"))
+        gen_mock = mocker.Mock()
+        gen_mock.generate_for_content.return_value = GeneratedContent(
+            label="МИФ", body="ироничный разбор мифа", claims_used=("c1",), unsupported_claims=()
+        )
+        mocker.patch("app.main.AIGenerator", return_value=gen_mock)
+        pub_mock = mocker.Mock()
+        pub_mock.post.return_value = 5
+        mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+
+        # unverified-карточка не попадает в strict fact-слот; первый дневной
+        # слот с фолбэком (drink) заберёт её
+        post_id = run_content_slot("tok", 123, "key", "2026-08-31", "drink", content_db=content_db)
+
+        assert post_id == 5
+        assert pub_mock.post.call_args.kwargs["message"] == "МИФ: ироничный разбор мифа"
+
+    def test_run_content_slot_attaches_image_when_enabled(self, mocker, tmp_path):
+        from app.main import run_content_slot
+
+        content_db = str(tmp_path / "content.sqlite3")
+        with ContentStore(content_db) as store:
+            store.import_card(make_content_card(image_url="https://example.org/stakan.jpg"))
+        photo_file = tmp_path / "photo.jpg"
+        photo_file.write_bytes(b"jpeg-bytes")
+        download_mock = mocker.patch("app.main.download_image", return_value=str(photo_file))
+        pub_mock = mocker.Mock()
+        pub_mock.post.return_value = 7
+        mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+
+        post_id = run_content_slot(
+            "tok", 123, "key", "2026-08-31", "fact",
+            content_db=content_db, with_photos=True,
+        )
+
+        assert post_id == 7
+        assert pub_mock.post.call_args.kwargs["photo_path"] == str(photo_file)
+        download_mock.assert_called_once_with("https://example.org/stakan.jpg", allowed_hosts=())
+
+    def test_run_content_slot_forwards_recent_cards_to_planner(self, mocker, tmp_path):
+        from app.main import run_content_slot
+
+        content_db = str(tmp_path / "content.sqlite3")
+        planner_mock = mocker.patch("app.main.build_plan", return_value=[])
+
+        result = run_content_slot(
+            "tok", 123, "key", "2026-08-31", "context",
+            content_db=content_db, recent_card_ids=("card-9",),
+        )
+
+        assert result is None
+        planner_mock.assert_called_once()
+        assert planner_mock.call_args.args[2] == ("card-9",)
+
+
+def test_plan_content_day_forwards_recent_cards_to_planner(mocker, tmp_path):
+    from app.main import plan_content_day
+
+    content_db = str(tmp_path / "content.sqlite3")
+    planner_mock = mocker.patch("app.main.build_plan", return_value=[])
+
+    plan_content_day("2026-08-31", content_db=content_db, recent_card_ids=("card-9",))
+
+    planner_mock.assert_called_once()
+    assert planner_mock.call_args.args[2] == ("card-9",)
+
+
+def test_plan_content_day_regenerates_stale_plan_version(tmp_path):
+    from app.content_planner import build_plan
+    from app.main import plan_content_day
+
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card())
+    with ContentStore(content_db) as store:
+        store.save_plan("2026-08-31", build_plan("2026-08-31", store.list_cards()), plan_version=1)
+
+    result = plan_content_day("2026-08-31", content_db=content_db)
+
+    assert result[0]["plan_version"] == 2
+
+
+def test_fact_slot_publishes_verified_card(mocker, tmp_path):
+    from app.main import run_content_slot
+
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card())
+    pub_mock = mocker.Mock()
+    pub_mock.post.return_value = 42
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+
+    post_id = run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db)
+
+    assert post_id == 42
+    assert pub_mock.post.call_args.kwargs["message"].startswith("ФАКТ:")

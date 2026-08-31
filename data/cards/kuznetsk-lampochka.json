@@ -1,0 +1,44 @@
+{
+  "image_url": "",
+  "card_id": "kuznetsk-lampochka",
+  "calendar_day": "00-00",
+  "status": "unverified",
+  "title": "Первая лампочка Кузнецка",
+  "summary": "На Кузнецком водочном заводе зажглась первая в городе электрическая лампочка: динамо-машина крутила конвейер и освещала зал.",
+  "tags": [
+    "topic.places",
+    "topic.production"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "На Кузнецком водочном заводе зажглась первая в городе электрическая лампочка: динамо-машина крутила конвейерную ленту и давала освещение в одном из залов.",
+      "provenance_id": "kuznetsk-lampochka-src-1"
+    },
+    {
+      "claim_id": "c2",
+      "text": "Завод зародился в 1900 году как «винный склад» производительностью 100 тысяч вёдер водки в год.",
+      "provenance_id": "kuznetsk-lampochka-src-1"
+    }
+  ],
+  "provenance": [
+    {
+      "provenance_id": "kuznetsk-lampochka-src-1",
+      "source_type": "museum",
+      "title": "Вековая история качества НЛВЗ",
+      "author": "Культура.РФ (платформа Artefact)",
+      "url": "https://ar.culture.ru/en/subject/vekovaya-istoriya-kachestva-nlvz",
+      "locator": "абзац «Кузнецкий водочный завод…»",
+      "quote": "именно на этом предприятии зажглась первая в городе электрическая лампочка: динамо-машина крутила конвейерную ленту и давала освещение в одном из залов."
+    },
+    {
+      "provenance_id": "kuznetsk-lampochka-src-2",
+      "source_type": "museum",
+      "title": "Вековая история качества НЛВЗ",
+      "author": "Культура.РФ (платформа Artefact)",
+      "url": "https://ar.culture.ru/en/subject/vekovaya-istoriya-kachestva-nlvz",
+      "locator": "абзац «Кузнецкий водочный завод…»",
+      "quote": "Кузнецкий водочный завод зародился в 1900 году как «винный склад»."
+    }
+  ]
+}
