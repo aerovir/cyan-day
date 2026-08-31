@@ -84,10 +84,35 @@ class AIGenerator:
             "Исходное утверждение является неподтверждённым, спорным или отвергнутым; не выдавай его за факт.\\n"
             "Используй только данные между SOURCE_FACTS и END_SOURCE_FACTS. Не выдумывай даты, имена, цифры, места или события.\\n"
             f"SOURCE_FACTS\\nЗаголовок: {title}\\nОписание: {description[:1500]}\\n{claim_text}\\nEND_SOURCE_FACTS\\n"
-            f'Верни только JSON без пояснений и ограждений: {{"label":"{label}","body":"3-5 предложений",'
-            '"claims_used":["claim_id"],"unsupported_claims":[],"visual_brief":"без текста"}'
+            f'Верни только JSON без пояснений и ограждений. Схема: {{"label":"{label}","body":"3-5 предложений",'
+            '"claims_used":["сюда — только идентификаторы claim_id из списка SOURCE_FACTS, использованные в тексте, например \\"c1\\" — без текста утверждений"],'
+            '"unsupported_claims":["сюда — только идентификаторы claim_id, которые не подтверждаются фактами; обычно пустой массив"],'
+            '"visual_brief":"без текста"}'
         )
         raw = self.generate(prompt, response_format="json_object")
+        parsed = self._parse_status_response(raw)
+        known = {str(claim.get("claim_id")) for claim in claims or []}
+        problems = self._status_problems(parsed, label, known)
+        if problems:
+            # Одна повторная попытка с явным указанием формата
+            correction = (
+                '\n\nИсправь формат ответа: верни только JSON; "label" должен быть ровно "' + label + '"; '
+                '"claims_used" и "unsupported_claims" — только идентификаторы claim_id из списка SOURCE_FACTS '
+                '(например, "c1"), без текста утверждений.'
+            )
+            raw = self.generate(prompt + correction, response_format="json_object")
+            parsed = self._parse_status_response(raw)
+            problems = self._status_problems(parsed, label, known)
+        if parsed is None:
+            raise AIError("Mistral returned invalid content JSON")
+        if problems:
+            raise AIError("Mistral content failed editorial validation: " + "; ".join(problems) + f" | raw: {raw[:300]}")
+        actual, body, used, unsupported, brief = parsed
+        return GeneratedContent(actual, body, used, unsupported, brief)
+
+    @staticmethod
+    def _parse_status_response(raw: str) -> tuple[str, str, tuple[str, ...], tuple[str, ...], str] | None:
+        """Распарсить JSON-ответ статусной генерации; None при невалидной структуре."""
         try:
             data = _parse_json_block(raw)
             actual = str(data["label"])
@@ -95,12 +120,27 @@ class AIGenerator:
             used = tuple(str(value) for value in data["claims_used"])
             unsupported = tuple(str(value) for value in data["unsupported_claims"])
             brief = str(data.get("visual_brief", "")).strip()
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            raise AIError("Mistral returned invalid content JSON") from exc
-        known = {str(claim.get("claim_id")) for claim in claims or []}
-        if actual != label or not body or unsupported or any(value not in known for value in used):
-            raise AIError("Mistral content failed editorial validation")
-        return GeneratedContent(actual, body, used, unsupported, brief)
+            return actual, body, used, unsupported, brief
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _status_problems(parsed, label: str, known: set[str]) -> list[str]:
+        """Список редакционных несоответствий ответа модели."""
+        if parsed is None:
+            return ["invalid JSON structure"]
+        actual, body, used, unsupported, _brief = parsed
+        problems = []
+        if actual != label:
+            problems.append(f"label {actual!r} != {label!r}")
+        if not body:
+            problems.append("empty body")
+        if unsupported:
+            problems.append(f"unsupported_claims={list(unsupported)}")
+        unknown_used = [value for value in used if value not in known]
+        if unknown_used:
+            problems.append(f"unknown claims_used={unknown_used}")
+        return problems
 
     def generate_for_content(self, card: Mapping[str, Any]) -> GeneratedContent:
         return self.generate_for_status(

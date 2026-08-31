@@ -169,3 +169,15 @@ class TestGenerateForStatus:
         generator.generate_for_status("unverified", "Т", "О")
         payload = ai_generator.requests.post.call_args.kwargs["json"]
         assert payload.get("response_format") == {"type": "json_object"}
+
+    def test_retries_with_correction_when_claims_used_holds_text(self, mocker, generator):
+        """Если модель положила в claims_used тексты вместо идентификаторов — одна повторная попытка с уточнением."""
+        bad = '{"label": "МИФ", "body": "текст", "claims_used": ["В 1914 году был сухой закон"], "unsupported_claims": [], "visual_brief": "без текста"}'
+        good = '{"label": "МИФ", "body": "текст", "claims_used": ["c1"], "unsupported_claims": [], "visual_brief": "без текста"}'
+        gen_mock = mocker.patch.object(generator, "generate", side_effect=[bad, good])
+
+        result = generator.generate_for_status("unverified", "Т", "О", [{"claim_id": "c1", "text": "факт"}])
+
+        assert result.label == "МИФ"
+        assert gen_mock.call_count == 2
+        assert "Исправь формат" in gen_mock.call_args.args[0]
