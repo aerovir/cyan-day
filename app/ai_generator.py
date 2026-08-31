@@ -108,6 +108,13 @@ class AIGenerator:
         if problems:
             raise AIError("Mistral content failed editorial validation: " + "; ".join(problems) + f" | raw: {raw[:300]}")
         actual, body, used, unsupported, brief = parsed
+        # Метаданные claims не попадают в пост — только в лог: модель может честно
+        # помечать миф-claims как неподтверждённые или изредка придумать id.
+        if unsupported:
+            logger.warning("Mistral пометил неподтверждёнными claims: %s", list(unsupported))
+        unknown_used = [value for value in used if value not in known]
+        if unknown_used:
+            logger.warning("Mistral указал неизвестные claims_used: %s", unknown_used)
         return GeneratedContent(actual, body, used, unsupported, brief)
 
     @staticmethod
@@ -126,20 +133,19 @@ class AIGenerator:
 
     @staticmethod
     def _status_problems(parsed, label: str, known: set[str]) -> list[str]:
-        """Список редакционных несоответствий ответа модели."""
+        """Блокирующие редакционные несоответствия ответа модели.
+
+        Только маркировка и пустой текст: метаданные claims в пост не
+        попадают и проверяются отдельно (см. generate_for_status).
+        """
         if parsed is None:
             return ["invalid JSON structure"]
-        actual, body, used, unsupported, _brief = parsed
+        actual, body, _used, _unsupported, _brief = parsed
         problems = []
         if actual != label:
             problems.append(f"label {actual!r} != {label!r}")
         if not body:
             problems.append("empty body")
-        if unsupported:
-            problems.append(f"unsupported_claims={list(unsupported)}")
-        unknown_used = [value for value in used if value not in known]
-        if unknown_used:
-            problems.append(f"unknown claims_used={unknown_used}")
         return problems
 
     def generate_for_content(self, card: Mapping[str, Any]) -> GeneratedContent:

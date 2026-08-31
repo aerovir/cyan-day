@@ -170,14 +170,27 @@ class TestGenerateForStatus:
         payload = ai_generator.requests.post.call_args.kwargs["json"]
         assert payload.get("response_format") == {"type": "json_object"}
 
-    def test_retries_with_correction_when_claims_used_holds_text(self, mocker, generator):
-        """Если модель положила в claims_used тексты вместо идентификаторов — одна повторная попытка с уточнением."""
-        bad = '{"label": "МИФ", "body": "текст", "claims_used": ["В 1914 году был сухой закон"], "unsupported_claims": [], "visual_brief": "без текста"}'
-        good = '{"label": "МИФ", "body": "текст", "claims_used": ["c1"], "unsupported_claims": [], "visual_brief": "без текста"}'
+    def test_retries_with_correction_on_wrong_label(self, mocker, generator):
+        """Неверная маркировка — одна повторная попытка с уточнением, затем успех."""
+        bad = '{"label": "РАЗБОР", "body": "текст", "claims_used": [], "unsupported_claims": [], "visual_brief": ""}'
+        good = '{"label": "МИФ", "body": "текст", "claims_used": [], "unsupported_claims": [], "visual_brief": ""}'
         gen_mock = mocker.patch.object(generator, "generate", side_effect=[bad, good])
 
-        result = generator.generate_for_status("unverified", "Т", "О", [{"claim_id": "c1", "text": "факт"}])
+        result = generator.generate_for_status("unverified", "Т", "О")
 
         assert result.label == "МИФ"
         assert gen_mock.call_count == 2
         assert "Исправь формат" in gen_mock.call_args.args[0]
+
+    def test_unsupported_claims_do_not_block_publication(self, mocker, generator):
+        """Метаданные claims в пост не попадают: unsupported/неизвестные id — не блокировка."""
+        raw = '{"label": "МИФ", "body": "текст", "claims_used": ["c1"], "unsupported_claims": ["c2"], "visual_brief": "без текста"}'
+        self._mock_raw(mocker, generator, raw)
+
+        result = generator.generate_for_status(
+            "unverified", "Т", "О",
+            [{"claim_id": "c1", "text": "ф"}, {"claim_id": "c2", "text": "ф2"}],
+        )
+
+        assert result.label == "МИФ"
+        assert result.unsupported_claims == ("c2",)
