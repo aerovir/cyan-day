@@ -8,12 +8,26 @@ from __future__ import annotations
 import io
 import logging
 import os
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 import vk_api
 from vk_api.exceptions import VkApiError
 
 logger = logging.getLogger(__name__)
+POST_ID_ERROR = "VK returned an invalid post result"
+
+
+class VKUnknownError(Exception):
+    """VK may have accepted the post, but its result is ambiguous."""
+
+
+class VKResultError(VKUnknownError):
+    """VK returned a malformed response after the request was sent."""
+
+
+class VKTransportError(VKUnknownError):
+    """The transport failed after the VK request may have been accepted."""
 
 
 class VKError(Exception):
@@ -75,8 +89,14 @@ class VKPublisher:
             response = self.api.wall.post(**params)
         except VkApiError as exc:
             raise VKError(f"Ошибка публикации в VK: {exc}") from exc
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            raise VKTransportError(str(exc)) from exc
 
-        post_id = response.get("post_id")
+        if not isinstance(response, Mapping):
+            raise VKResultError(POST_ID_ERROR)
+        post_id: Any = response.get("post_id")
+        if isinstance(post_id, bool) or not isinstance(post_id, int) or post_id <= 0:
+            raise VKResultError(POST_ID_ERROR)
         logger.info("Опубликован пост #%s (attachment: %s)", post_id, attachment)
         return post_id
 

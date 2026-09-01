@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -32,6 +33,21 @@ PLAN_VERSION = 2
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _timestamp(value: str) -> float:
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def _validate_post_id(post_id: int | None) -> int:
+    if isinstance(post_id, bool) or not isinstance(post_id, int) or post_id <= 0:
+        raise ContentError("published records need a positive VK post id")
+    return post_id
+
+
+def _validate_publication_state(state: str) -> None:
+    if state not in {"publishing", "published", "failed", "unknown"}:
+        raise ContentError(f"unsupported publication state: {state}")
 
 
 def _hash_card(card: Mapping[str, Any]) -> str:
@@ -250,17 +266,94 @@ class ContentStore:
         ).fetchall()
         return [row["card_id"] for row in rows]
 
+    def get_publication(self, local_date: str, slot_key: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM publication_ledger WHERE local_date=? AND slot_key=?", (local_date, slot_key)).fetchone()
+        return dict(row) if row is not None else None
+
+    get_ledger = get_publication
+
+    def list_stale_publishing(self, older_than_seconds: int | float, *, local_date: str | None = None) -> list[dict[str, Any]]:
+        if older_than_seconds < 0:
+            raise ContentError("older_than_seconds must be non-negative")
+        query = "SELECT * FROM publication_ledger WHERE state='publishing'"
+        args: list[Any] = []
+        if local_date is not None:
+            query += " AND local_date=?"
+            args.append(local_date)
+        cutoff = time.time() - float(older_than_seconds)
+        result = []
+        for row in self.conn.execute(query + " ORDER BY updated_at", args):
+            try:
+                stale = _timestamp(row["updated_at"]) <= cutoff
+            except (TypeError, ValueError):
+                stale = True
+            if stale:
+                result.append(dict(row))
+        return result
+
+    list_stale_publications = list_stale_publishing
+
     def claim_slot(self, local_date: str, slot_key: str, card: ContentCard) -> bool:
-        key = self.idempotency_key(local_date,slot_key,card); now = _now(); self.conn.execute("BEGIN IMMEDIATE")
+        key = self.idempotency_key(local_date, slot_key, card)
+        now = _now()
+        self.conn.execute("BEGIN IMMEDIATE")
         try:
-            row = self.conn.execute("SELECT state, attempts FROM publication_ledger WHERE local_date=? AND slot_key=?", (local_date,slot_key)).fetchone()
-            if row and row["state"] in {"published","unknown"}: self.conn.execute("COMMIT"); return False
-            self.conn.execute("INSERT OR REPLACE INTO publication_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (key,local_date,slot_key,card.card_id,card.revision,"publishing",(row["attempts"]+1 if row else 1),None,None,None,now,now)); self.conn.execute("COMMIT"); return True
+            row = self.conn.execute("SELECT state, attempts FROM publication_ledger WHERE local_date=? AND slot_key=?", (local_date, slot_key)).fetchone()
+            if row and row["state"] in {"published", "unknown", "publishing"}:
+                self.conn.execute("COMMIT")
+                return False
+            self.conn.execute("INSERT OR REPLACE INTO publication_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (key, local_date, slot_key, card.card_id, card.revision, "publishing", (row["attempts"] + 1 if row else 1), None, None, None, now, now))
+            self.conn.execute("COMMIT")
+            return True
         except Exception:
-            self.conn.execute("ROLLBACK"); raise
+            self.conn.execute("ROLLBACK")
+            raise
 
-    def mark_published(self, local_date: str, slot_key: str, post_id: int, text: str) -> None:
-        self.conn.execute("UPDATE publication_ledger SET state='published',vk_post_id=?,generated_text=?,updated_at=? WHERE local_date=? AND slot_key=?", (post_id,text,_now(),local_date,slot_key))
+    def _transition(self, local_date: str, slot_key: str, state: str, *, error: str = "", post_id: int | None = None, text: str | None = None, expected_idempotency_key: str | None = None, expected_states: tuple[str, ...] = ("publishing",)) -> bool:
+        _validate_publication_state(state)
+        if state == "published":
+            _validate_post_id(post_id)
+        elif post_id is not None:
+            raise ContentError("only published records may have a VK post id")
+        row = self.get_publication(local_date, slot_key)
+        if row is None or row["state"] not in expected_states or (expected_idempotency_key and row["idempotency_key"] != expected_idempotency_key):
+            return False
+        updated = self.conn.execute("UPDATE publication_ledger SET state=?,vk_post_id=?,generated_text=?,error=?,updated_at=? WHERE local_date=? AND slot_key=? AND state=? AND idempotency_key=?", (state, post_id, text, error[:1000], _now(), local_date, slot_key, row["state"], row["idempotency_key"])).rowcount
+        return updated == 1
 
-    def mark_failed(self, local_date: str, slot_key: str, error: str) -> None:
-        self.conn.execute("UPDATE publication_ledger SET state='failed',error=?,updated_at=? WHERE local_date=? AND slot_key=?", (error[:1000],_now(),local_date,slot_key))
+    def mark_published(self, local_date: str, slot_key: str, post_id: int, text: str, *, expected_idempotency_key: str | None = None) -> bool:
+        return self._transition(local_date, slot_key, "published", post_id=post_id, text=text, expected_idempotency_key=expected_idempotency_key)
+
+    def mark_failed(self, local_date: str, slot_key: str, error: str, *, expected_idempotency_key: str | None = None) -> bool:
+        return self._transition(local_date, slot_key, "failed", error=error, expected_idempotency_key=expected_idempotency_key)
+
+    def mark_unknown(self, local_date: str, slot_key: str, error: str, *, expected_idempotency_key: str | None = None) -> bool:
+        return self._transition(local_date, slot_key, "unknown", error=error, expected_idempotency_key=expected_idempotency_key)
+
+    def reconcile_publication(self, local_date: str, slot_key: str, state: str, *, vk_post_id: int | None = None, error: str = "", generated_text: str | None = None, expected_idempotency_key: str | None = None) -> bool:
+        if state not in {"published", "failed"}:
+            raise ContentError("reconciliation state must be published or failed")
+        return self._transition(local_date, slot_key, state, post_id=vk_post_id, error=error, text=generated_text, expected_idempotency_key=expected_idempotency_key, expected_states=("unknown",))
+
+    reconcile_slot = reconcile_publication
+
+    def mark_stale_unknown(self, older_than_seconds: int | float, *, local_date: str | None = None, error: str = "publishing attempt became stale; VK outcome requires reconciliation") -> list[dict[str, Any]]:
+        changed = []
+        for row in self.list_stale_publishing(older_than_seconds, local_date=local_date):
+            if self.mark_unknown(row["local_date"], row["slot_key"], error, expected_idempotency_key=row["idempotency_key"]):
+                current = self.get_publication(row["local_date"], row["slot_key"])
+                if current:
+                    changed.append(current)
+        return changed
+
+    reconcile_stale_publishing = mark_stale_unknown
+
+    def publication_ledger(self, local_date: str | None = None) -> list[dict[str, Any]]:
+        query = "SELECT * FROM publication_ledger"
+        args: list[Any] = []
+        if local_date is not None:
+            query += " WHERE local_date=?"
+            args.append(local_date)
+        return [dict(row) for row in self.conn.execute(query + " ORDER BY local_date,slot_key", args)]
+
+    list_publications = publication_ledger

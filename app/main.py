@@ -19,7 +19,7 @@ from .content_store import PLAN_VERSION, ContentCard, ContentError, ContentStore
 from .holidays_parser import HolidaysParser, Holiday
 from .source_registry import DEFAULT_DB_PATH, SourceRegistry
 from .sources import SourceError, SourceItem, deduplicate_source_items, validate_url
-from .vk_publisher import VKError, VKPublisher
+from .vk_publisher import VKError, VKPublisher, VKUnknownError
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,7 @@ def run_content_slot(
     recent_card_ids: Iterable[str] = (),
 ) -> int | None:
     """Generate and publish one planned editorial slot exactly once."""
+    ledger_key = None
     with ContentStore(content_db) as store:
         card = store.planned_card(local_date, slot_key)
         if card is None:
@@ -132,6 +133,8 @@ def run_content_slot(
             card = store.planned_card(local_date, slot_key)
         if card is None or not store.claim_slot(local_date, slot_key, card):
             return None
+        ledger = store.get_publication(local_date, slot_key)
+        ledger_key = ledger["idempotency_key"] if ledger else None
     photo_path = None
     try:
         generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
@@ -147,13 +150,19 @@ def run_content_slot(
         publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
         post_id = publisher.post(message=text, photo_path=photo_path)
         with ContentStore(content_db) as store:
-            store.mark_published(local_date, slot_key, post_id, text)
+            store.mark_published(local_date, slot_key, post_id, text, expected_idempotency_key=ledger_key)
         return post_id
+    except VKUnknownError as exc:
+        with ContentStore(content_db) as store:
+            store.mark_unknown(local_date, slot_key, str(exc), expected_idempotency_key=ledger_key)
+        logger.error("Не удалось определить результат публикации слота %s: %s", slot_key, exc)
+        return None
     except (AIError, VKError, OSError, ContentError) as exc:
         with ContentStore(content_db) as store:
-            store.mark_failed(local_date, slot_key, str(exc))
+            store.mark_failed(local_date, slot_key, str(exc), expected_idempotency_key=ledger_key)
         logger.error("Не удалось опубликовать слот %s: %s", slot_key, exc)
         return None
+
     finally:
         if photo_path:
             try:

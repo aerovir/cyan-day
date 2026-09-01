@@ -1,14 +1,13 @@
 """Тесты для публикации постов в VK через vk_api."""
 import pytest
 
-from app.vk_publisher import VKError, VKPublisher
+from app.vk_publisher import VKError, VKPublisher, VKResultError, VKTransportError
 
 
 @pytest.fixture
 def vk_session_mock(mocker):
     """Мок VkApi-сессии."""
-    session = mocker.Mock()
-    return session
+    return mocker.Mock()
 
 
 @pytest.fixture
@@ -32,17 +31,14 @@ class TestVKPublisher:
 
     def test_api_available(self, vk_session_mock, publisher):
         """Метод get_api должен возвращать API."""
-        api = vk_session_mock.get_api.return_value
-        assert publisher.api is api
+        assert publisher.api is vk_session_mock.get_api.return_value
 
     def test_post_without_photo(self, publisher, vk_session_mock):
         """Пост без фото: wall.post вызывается с owner_id и message."""
         api = vk_session_mock.get_api.return_value
         api.wall.post.return_value = {"post_id": 123}
 
-        post_id = publisher.post(
-            message="Сегодня день гранёного стакана",
-        )
+        post_id = publisher.post(message="Сегодня день гранёного стакана")
 
         assert post_id == 123
         api.wall.post.assert_called_once()
@@ -54,22 +50,15 @@ class TestVKPublisher:
         """Пост с фото: загружается через photo_wall и добавляется attachment."""
         api = vk_session_mock.get_api.return_value
         api.wall.post.return_value = {"post_id": 456}
-
         upload = mocker.patch("app.vk_publisher.vk_api.VkUpload").return_value
         upload.photo_wall.return_value = [{"owner_id": -123456789, "id": 999}]
-
-        # Создаём реальный файл-картинку
         photo = tmp_path / "photo.jpg"
         photo.write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
-        post_id = publisher.post(
-            message="Пост с картинкой",
-            photo_path=str(photo),
-        )
+        post_id = publisher.post(message="Пост с картинкой", photo_path=str(photo))
 
         assert post_id == 456
         upload.photo_wall.assert_called_once()
-        api.wall.post.assert_called_once()
         call_kwargs = api.wall.post.call_args.kwargs
         assert "photo-123456789_999" in call_kwargs["attachment"]
 
@@ -80,16 +69,28 @@ class TestVKPublisher:
 
         publisher.post(message="Текст без фото")
 
-        call_kwargs = api.wall.post.call_args.kwargs
-        assert call_kwargs.get("attachment") is None
+        assert api.wall.post.call_args.kwargs.get("attachment") is None
 
     def test_vk_error_raises(self, publisher, vk_session_mock):
         """Ошибка VK должна подниматься как VKError."""
-        api = vk_session_mock.get_api.return_value
-        api.wall.post.side_effect = vk_api_error("Не хватает прав")
+        vk_session_mock.get_api.return_value.wall.post.side_effect = vk_api_error("Не хватает прав")
 
         with pytest.raises(VKError):
             publisher.post(message="Тест")
+
+    def test_invalid_result_is_ambiguous(self, publisher, vk_session_mock):
+        """Ответ без корректного post_id нельзя считать ошибкой без публикации."""
+        vk_session_mock.get_api.return_value.wall.post.return_value = {"post_id": 0}
+
+        with pytest.raises(VKResultError):
+            publisher.post(message="Неопределённый результат")
+
+    def test_transport_error_is_ambiguous(self, publisher, vk_session_mock):
+        """Сетевой сбой после отправки не должен автоматически считаться failed."""
+        vk_session_mock.get_api.return_value.wall.post.side_effect = TimeoutError("timeout")
+
+        with pytest.raises(VKTransportError):
+            publisher.post(message="Неопределённый результат")
 
     def test_missing_token_raises(self, vk_session_mock, mocker):
         """Без токена VKPublisher должен падать."""

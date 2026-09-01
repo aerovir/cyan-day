@@ -138,6 +138,19 @@ def test_claim_slot_retries_after_failure():
         assert store.claim_slot("2026-08-31", "context", card) is False
 
 
+def test_publication_ledger_prevents_concurrent_claim_and_reconciles_unknown():
+    with ContentStore(":memory:") as store:
+        card = store.import_card(make_card())
+        assert store.claim_slot("2026-08-31", "context", card)
+        assert not store.claim_slot("2026-08-31", "context", card)
+        ledger = store.get_ledger("2026-08-31", "context")
+        assert ledger["state"] == "publishing"
+        assert store.mark_unknown("2026-08-31", "context", "timeout")
+        assert not store.claim_slot("2026-08-31", "context", card)
+        assert store.reconcile_slot("2026-08-31", "context", "published", vk_post_id=99)
+        assert store.get_publication("2026-08-31", "context")["state"] == "published"
+
+
 def test_recent_published_card_ids_returns_newest_first():
     with ContentStore(":memory:") as store:
         for card_id, local_date in (("card-1", "2026-08-30"), ("card-2", "2026-08-31")):
