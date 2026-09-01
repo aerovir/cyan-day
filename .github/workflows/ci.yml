@@ -5,6 +5,13 @@ on:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  # GitHub Actions interprets cron expressions as UTC.
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -25,6 +32,12 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+      - name: Compile application
+        run: python -m compileall -q app main.py scheduler.py
+
+      - name: Build Docker image
+        run: docker build --tag cyan-day:ci .
 
   # Смоук-тест реального AI-генератора с ключом из секретов.
   # Запускается по расписанию (ежедневно) и при ручном вызове.

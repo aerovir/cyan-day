@@ -81,6 +81,30 @@ docker compose up -d --build
 
 Бот настроится на ежедневный запуск в **9:00** (или во время из `POST_HOUR`/`POST_MINUTE`).
 Планировщик (`scheduler.py`) держит контейнер живым и запускает `main.py` в заданное время.
+Контейнер работает от непривилегированного пользователя, с read-only корневой файловой
+системой, без Linux capabilities и с writable volumes только для `/app/logs`, `/app/state`
+и временной директории `/tmp`. Входящие порты не публикуются.
+
+Проверить конфигурацию и healthcheck:
+
+```bash
+docker compose config
+docker compose ps
+docker inspect --format '{{.State.Health.Status}}' cyan-day
+```
+
+Healthcheck ожидает `healthy` после стартовой задержки. При остановке Compose даёт
+планировщику до 30 секунд на корректное завершение; JSON-логи ограничены 10 MiB на файл,
+максимум тремя файлами. Именованные `cyan-day` и `cyan-day-isolated` удобны для одной
+установки, но могут конфликтовать при параллельных установках на одном Docker-хосте.
+
+Сборка и compile smoke без публикации:
+
+```bash
+docker build -t cyan-day:local .
+docker run --rm --entrypoint python cyan-day:local \
+  -m compileall -q app main.py scheduler.py
+```
 
 > **Про сеть:** контейнер работает в отдельной Docker bridge-сети `cyan-day-isolated`.
 > Она не подключается к сетям других Compose-проектов, входящие порты не публикуются,
@@ -217,9 +241,16 @@ pytest
 
 ## GitHub Actions
 
-CI запускается на каждый push в `dev` и `main`:
-- **test** — линт и все тесты в контейнере.
-- **smoke-mistral** — ежедневно по расписанию проверяет, что Mistral-ключ работает (использует секрет `MISTRAL_API_KEY`).
+CI запускается на каждый push и pull request для `dev` и `main`, ежедневно в 06:00 UTC
+и вручную через **Actions → CI → Run workflow**.
+
+- **test** — pytest, compile smoke (`python -m compileall`) и Docker build.
+- **smoke-mistral** — после `test` проверяет Mistral API только на scheduled/manual запусках,
+  используя секрет `MISTRAL_API_KEY`.
+
+GitHub Actions не запускает бота и не публикует в VK. Секрет не нужен для сборки и не должен
+попадать в образ или командную строку. Cron задаётся в UTC и не переходит на летнее время
+вместе с Москвой.
 
 ## Структура `.env`
 
@@ -239,3 +270,7 @@ CI запускается на каждый push в `dev` и `main`:
 | `MAX_CATCHUP_SLOTS` | Максимум публикаций просроченных слотов за цикл догонки (по умолчанию 7) |
 | `ALLOW_CARD_REUSE` | `true` — повторять недавно опубликованные карточки; `false` — избегать карточек за последние 7 дней |
 | `LOG_LEVEL` | Уровень логирования |
+
+Скопируйте `.env.example`; реальные секреты храните только в `.env`. Основные числовые
+и временные параметры проверяются при старте. `SLOT_TIMES` должен содержать ровно семь
+значений `HH:MM`, а `VK_GROUP_ID` — положительное число без префикса `club`.
