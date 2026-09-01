@@ -8,6 +8,42 @@ from app.main import run_daily, today_str
 from app.sources import SourceItem
 
 
+def test_today_str_uses_requested_timezone(mocker):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    mocker.patch("app.main.local_now", return_value=datetime(2026, 9, 1, 1, tzinfo=ZoneInfo("Europe/Moscow")))
+    assert today_str("Europe/Moscow") == "2026-09-01"
+
+
+def test_validate_runtime_config_rejects_club_group_id():
+    from app.main import validate_runtime_config
+    with pytest.raises(ValueError, match="without the 'club' prefix"):
+        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "club123", "MISTRAL_API_KEY": "k"})
+
+
+def test_validate_runtime_config_requires_seven_slot_times():
+    from app.main import validate_runtime_config
+    with pytest.raises(ValueError, match="exactly seven"):
+        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k", "SLOT_TIMES": "09:00"})
+
+
+def test_validate_runtime_config_accepts_cards_config():
+    from app.main import validate_runtime_config
+    config = validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k", "CONTENT_MODE": "cards"})
+    assert config["vk_group_id"] == 123
+    assert config["content_mode"] == "cards"
+
+
+class TestTodayStr:
+    def test_today_str_format(self):
+        """today_str должен вернуть дату в формате ГГГГ-ММ-ДД."""
+        s = today_str()
+        assert len(s) == 10
+        parts = s.split("-")
+        assert len(parts) == 3
+        assert all(len(p) == 2 or (parts[0] and len(parts[0]) == 4) for p in parts)
+
+
 def make_item(title="День странной музыки", source_id="test", external_id="1", url=""):
     return SourceItem(
         source_id=source_id,
@@ -27,16 +63,6 @@ def make_holiday(title="День странной музыки"):
         image_url="https://www.calend.ru/img/content/i3/3731.jpg",
         category="Международные праздники",
     )
-
-
-class TestTodayStr:
-    def test_today_str_format(self):
-        """today_str должен вернуть дату в формате ГГГГ-ММ-ДД."""
-        s = today_str()
-        assert len(s) == 10
-        parts = s.split("-")
-        assert len(parts) == 3
-        assert all(len(p) == 2 or (parts[0] and len(parts[0]) == 4) for p in parts)
 
 
 class TestRunDaily:

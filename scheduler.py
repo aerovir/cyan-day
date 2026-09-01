@@ -8,6 +8,8 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from app.main import DEFAULT_BOT_TIMEZONE, DEFAULT_SLOT_TIMES, local_now, timezone_for, validate_runtime_config
+
 from dotenv import load_dotenv
 
 from app.content_store import SLOT_DEFINITIONS
@@ -15,13 +17,13 @@ from app.content_store import SLOT_DEFINITIONS
 load_dotenv()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s", stream=sys.stdout)
 logger = logging.getLogger("scheduler")
-DEFAULT_SLOTS = "09:00,10:30,12:00,13:30,15:00,17:00,19:00"
+DEFAULT_SLOTS = DEFAULT_SLOT_TIMES
 RECENT_WINDOW_DAYS = 7
 SLOT_KEYS = tuple(key for key, _time, _requirements, _strict in SLOT_DEFINITIONS)
 
 
-def _seconds_until(hour: int, minute: int) -> float:
-    now = datetime.now()
+def _seconds_until(hour: int, minute: int, timezone_name: str = DEFAULT_BOT_TIMEZONE) -> float:
+    now = local_now(timezone_name)
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
         target += timedelta(days=1)
@@ -69,7 +71,8 @@ def _recent_card_ids(content_db: str, local_date: str, days: int = RECENT_WINDOW
 
 def _run_cards_once() -> None:
     from app.main import env_bool, plan_content_day, run_content_slot
-    timezone_name = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
+    timezone_name = os.getenv("BOT_TIMEZONE", DEFAULT_BOT_TIMEZONE)
+    timezone_for(timezone_name)
     tz = ZoneInfo(timezone_name)
     now = datetime.now(timezone.utc)
     local_date = now.astimezone(tz).date().isoformat()
@@ -104,6 +107,11 @@ def _run_cards_once() -> None:
 
 def main() -> int:
     from app.main import run_daily
+    try:
+        validate_runtime_config()
+    except ValueError as exc:
+        logger.error("Ошибка конфигурации: %s", exc)
+        return 1
     if os.getenv("CONTENT_MODE", "legacy").strip().lower() == "cards":
         logger.info("Планировщик карточек запущен: 7 слотов, timezone=%s", os.getenv("BOT_TIMEZONE", "Europe/Moscow"))
         while True:
@@ -115,15 +123,16 @@ def main() -> int:
     hour = int(os.getenv("POST_HOUR", "9")); minute = int(os.getenv("POST_MINUTE", "0"))
     logger.info("Планировщик legacy запущен. Постинг в %02d:%02d", hour, minute)
     while True:
-        wait = _seconds_until(hour, minute)
+        timezone_name = os.getenv("BOT_TIMEZONE", DEFAULT_BOT_TIMEZONE)
+        wait = _seconds_until(hour, minute, timezone_name)
         logger.info("До следующего запуска: %.0f секунд", wait)
         time.sleep(min(wait, 3600))
-        now = datetime.now()
+        now = local_now(timezone_name)
         if now.hour == hour and now.minute == minute:
             logger.info("Время постить!")
             try:
                 options = _daily_options()
-                run_daily(**{key: options[key] for key in ("vk_token", "vk_group_id", "mistral_api_key", "max_holidays", "mistral_model", "with_photos", "registry_path", "registry_mode")})
+                run_daily(**{key: options[key] for key in ("vk_token", "vk_group_id", "mistral_api_key", "max_holidays", "mistral_model", "with_photos", "registry_path", "registry_mode")}, timezone_name=str(options["bot_timezone"]))
             except Exception as exc:  # noqa: BLE001
                 logger.error("Ошибка при выполнении: %s", exc)
             time.sleep(60)

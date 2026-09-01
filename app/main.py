@@ -6,8 +6,9 @@ import logging
 import os
 import sys
 import tempfile
-from datetime import date
-from typing import Iterable, List, Optional
+from datetime import datetime
+from typing import Iterable, List, Mapping, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 from dotenv import load_dotenv
@@ -26,6 +27,81 @@ CONTENT_LABELS = {"verified": "ФАКТ", "unverified": "МИФ", "disputed": "�
 SOURCE_REGISTRY_MODES = {"auto", "legacy", "registry"}
 IMAGE_HOSTS = ("calend.ru", "www.calend.ru")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+DEFAULT_BOT_TIMEZONE = "Europe/Moscow"
+DEFAULT_SLOT_TIMES = "09:00,10:30,12:00,13:30,15:00,17:00,19:00"
+
+
+def timezone_for(name: str = DEFAULT_BOT_TIMEZONE) -> ZoneInfo:
+    """Return a validated IANA timezone for all scheduler date calculations."""
+    try:
+        return ZoneInfo(name.strip())
+    except (AttributeError, ZoneInfoNotFoundError) as exc:
+        raise ValueError(f"invalid BOT_TIMEZONE: {name!r}") from exc
+
+
+def _parse_positive_int(value: str, name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if parsed <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return parsed
+
+
+def _parse_nonnegative_int(value: str, name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a non-negative integer") from exc
+    if parsed < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return parsed
+
+
+def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[str, object]:
+    """Validate boundary configuration before starting a long-lived process."""
+    values = os.environ if environ is None else environ
+    required = ("VK_TOKEN", "VK_GROUP_ID", "MISTRAL_API_KEY")
+    missing = [name for name in required if not values.get(name, "").strip()]
+    if missing:
+        raise ValueError("required environment variables are missing: " + ", ".join(missing))
+
+    group_id = values["VK_GROUP_ID"].strip()
+    if group_id.lower().startswith("club"):
+        raise ValueError("VK_GROUP_ID must be numeric without the 'club' prefix")
+    parsed_group_id = _parse_positive_int(group_id, "VK_GROUP_ID")
+    mode = values.get("CONTENT_MODE", "legacy").strip().lower()
+    if mode not in {"legacy", "cards"}:
+        raise ValueError("CONTENT_MODE must be either 'legacy' or 'cards'")
+    timezone_name = values.get("BOT_TIMEZONE", DEFAULT_BOT_TIMEZONE).strip()
+    timezone_for(timezone_name)
+
+    slot_times = tuple(item.strip() for item in values.get("SLOT_TIMES", DEFAULT_SLOT_TIMES).split(",") if item.strip())
+    if len(slot_times) != 7:
+        raise ValueError("SLOT_TIMES must contain exactly seven times")
+    for item in slot_times:
+        try:
+            datetime.strptime(item, "%H:%M")
+        except ValueError as exc:
+            raise ValueError(f"invalid slot time: {item!r}") from exc
+
+    max_catchup = _parse_positive_int(values.get("MAX_CATCHUP_SLOTS", "7"), "MAX_CATCHUP_SLOTS")
+    poll_seconds = _parse_positive_int(values.get("SCHEDULE_POLL_SECONDS", "20"), "SCHEDULE_POLL_SECONDS")
+    max_holidays = _parse_nonnegative_int(values.get("MAX_HOLIDAYS", "3"), "MAX_HOLIDAYS")
+    post_hour = _parse_nonnegative_int(values.get("POST_HOUR", "9"), "POST_HOUR")
+    post_minute = _parse_nonnegative_int(values.get("POST_MINUTE", "0"), "POST_MINUTE")
+    if post_hour > 23 or post_minute > 59:
+        raise ValueError("POST_HOUR must be 0..23 and POST_MINUTE must be 0..59")
+    return {
+        "vk_group_id": parsed_group_id,
+        "content_mode": mode,
+        "bot_timezone": timezone_name,
+        "slot_times": slot_times,
+        "max_catchup_slots": max_catchup,
+        "schedule_poll_seconds": poll_seconds,
+        "max_holidays": max_holidays,
+    }
 
 
 def _verified_text(card: ContentCard) -> str:
@@ -110,9 +186,24 @@ def env_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def today_str() -> str:
-    """Вернуть сегодняшнюю дату в формате ГГГГ-ММ-ДД."""
-    return date.today().strftime("%Y-%m-%d")
+def today_str(timezone_name: str = DEFAULT_BOT_TIMEZONE) -> str:
+    """Вернуть текущую дату в заданном часовом поясе."""
+    return local_now(timezone_name).date().isoformat()
+
+
+def local_now(timezone_name: str = DEFAULT_BOT_TIMEZONE) -> datetime:
+    """Return timezone-aware current time for scheduler and legacy flows."""
+    return datetime.now(timezone_for(timezone_name))
+
+
+def local_date_from_now(timezone_name: str = DEFAULT_BOT_TIMEZONE) -> str:
+    """Return the current local date in ISO format."""
+    return local_now(timezone_name).date().isoformat()
+
+
+def validate_config() -> dict[str, object]:
+    """Validate process environment and return parsed runtime values."""
+    return validate_runtime_config()
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -274,12 +365,13 @@ def run_daily(
     with_photos: bool = False,
     registry_path: str | None = None,
     registry_mode: str = "auto",
+    timezone_name: str = DEFAULT_BOT_TIMEZONE,
 ) -> List[int]:
     """Основной цикл: собрать праздники, сгенерировать и опубликовать посты."""
     generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
     publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
 
-    today = today_str()
+    today = today_str(timezone_name)
     logger.info("Собираю праздники на %s", today)
     items = _collect_items(today, registry_path=registry_path, registry_mode=registry_mode)
 
@@ -320,20 +412,17 @@ def main() -> int:
     setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
     vk_token = os.getenv("VK_TOKEN", "")
-    vk_group_id = os.getenv("VK_GROUP_ID", "")
     mistral_api_key = os.getenv("MISTRAL_API_KEY", "")
 
-    if not vk_token:
-        logger.error("VK_TOKEN не задан в .env")
-        return 1
-    if not vk_group_id:
-        logger.error("VK_GROUP_ID не задан в .env")
-        return 1
-    if not mistral_api_key:
-        logger.error("MISTRAL_API_KEY не задан в .env")
+    try:
+        runtime = validate_runtime_config()
+        max_holidays = int(runtime["max_holidays"])
+        timezone_name = str(runtime["bot_timezone"])
+        parsed_group_id = int(runtime["vk_group_id"])
+    except ValueError as exc:
+        logger.error("Ошибка конфигурации: %s", exc)
         return 1
 
-    max_holidays = int(os.getenv("MAX_HOLIDAYS", "3"))
     mistral_model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
     with_photos = env_bool(os.getenv("WITH_PHOTOS"))
     registry_path = os.getenv("SOURCE_REGISTRY_DB", DEFAULT_DB_PATH)
@@ -342,13 +431,14 @@ def main() -> int:
     try:
         run_daily(
             vk_token=vk_token,
-            vk_group_id=int(vk_group_id),
+            vk_group_id=parsed_group_id,
             mistral_api_key=mistral_api_key,
             max_holidays=max_holidays,
             mistral_model=mistral_model,
             with_photos=with_photos,
             registry_path=registry_path,
             registry_mode=registry_mode,
+            timezone_name=timezone_name,
         )
     except (AIError, VKError, SourceError, OSError) as exc:
         logger.error("Ошибка выполнения: %s", exc)
