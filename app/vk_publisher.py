@@ -34,6 +34,14 @@ class VKError(Exception):
     """Ошибка публикации в VK."""
 
 
+class VKPhotoUploadError(VKError):
+    """Photo upload failed before wall.post was called."""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class VKPublisher:
     """Публикация постов в сообщество VK."""
 
@@ -107,21 +115,26 @@ class VKPublisher:
             Строка attachment вида ``photo{owner_id}_{id}``.
         """
         if not os.path.exists(photo_path):
-            raise VKError(f"Файл не найден: {photo_path}")
+            raise VKPhotoUploadError(f"Файл не найден: {photo_path}")
 
         upload = vk_api.VkUpload(self._session)
-        with open(photo_path, "rb") as f:
-            photo_data = io.BytesIO(f.read())
-
         try:
+            with open(photo_path, "rb") as f:
+                photo_data = io.BytesIO(f.read())
             photo = upload.photo_wall(
                 photos=photo_data,
                 group_id=self.group_id,
             )
         except VkApiError as exc:
-            raise VKError(f"Ошибка загрузки фото в VK: {exc}") from exc
+            code = getattr(exc, "code", None)
+            raise VKPhotoUploadError(f"Ошибка загрузки фото в VK: {exc}", code=code) from exc
+        except (OSError, TypeError, IndexError, KeyError) as exc:
+            raise VKPhotoUploadError(f"Ошибка подготовки фото для VK: {exc}") from exc
 
-        item = photo[0]
-        owner_id = item["owner_id"]
-        photo_id = item["id"]
+        try:
+            item = photo[0]
+            owner_id = item["owner_id"]
+            photo_id = item["id"]
+        except (IndexError, KeyError, TypeError) as exc:
+            raise VKPhotoUploadError("VK returned an invalid photo upload result") from exc
         return f"photo{owner_id}_{photo_id}"

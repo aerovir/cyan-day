@@ -34,6 +34,68 @@ def test_validate_runtime_config_accepts_cards_config():
     assert config["content_mode"] == "cards"
 
 
+def test_validate_runtime_config_accepts_pollinations_config():
+    from app.main import validate_runtime_config
+    config = validate_runtime_config({
+        "VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k",
+        "IMAGE_PROVIDER": "pollinations",
+    })
+    assert config["image_provider"] == "pollinations"
+    assert config["image_model"] == "flux"
+
+
+def test_validate_runtime_config_rejects_unsafe_pollinations_url():
+    from app.main import validate_runtime_config
+    with pytest.raises(ValueError, match="https"):
+        validate_runtime_config({
+            "VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k",
+            "IMAGE_PROVIDER": "pollinations", "IMAGE_BASE_URL": "http://image.pollinations.ai/prompt",
+        })
+
+
+def test_image_provider_is_not_called_when_photos_disabled(mocker, tmp_path):
+    from app.main import run_content_slot
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card())
+    image_mock = mocker.patch("app.main._generated_image")
+    pub_mock = mocker.Mock()
+    pub_mock.post.return_value = 1
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+    assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, image_provider="pollinations") == 1
+    image_mock.assert_not_called()
+
+
+def test_pollinations_image_failure_falls_back_to_text(mocker, tmp_path):
+    from app.main import run_content_slot
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card())
+    mocker.patch("app.main._generated_image", return_value=None)
+    pub_mock = mocker.Mock()
+    pub_mock.post.return_value = 1
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+    assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, with_photos=True, image_provider="pollinations") == 1
+    assert pub_mock.post.call_args.kwargs["photo_path"] is None
+
+
+def test_vk_photo_upload_failure_retries_text_only(mocker, tmp_path):
+    from app.main import run_content_slot
+    from app.vk_publisher import VKPhotoUploadError
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card(image_url="https://example.org/photo.jpg"))
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"jpeg")
+    mocker.patch("app.main.download_image", return_value=str(photo))
+    pub_mock = mocker.Mock()
+    pub_mock.post.side_effect = [VKPhotoUploadError("permission", code=27), 7]
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+    assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, with_photos=True) == 7
+    assert pub_mock.post.call_count == 2
+    assert pub_mock.post.call_args_list[-1].kwargs["photo_path"] is None
+
+
 class TestTodayStr:
     def test_today_str_format(self):
         """today_str должен вернуть дату в формате ГГГГ-ММ-ДД."""

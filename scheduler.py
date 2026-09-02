@@ -49,6 +49,11 @@ def _daily_options() -> dict[str, object]:
         "with_photos": env_bool(os.getenv("WITH_PHOTOS")),
         "registry_path": os.getenv("SOURCE_REGISTRY_DB", "state/sources.sqlite3"),
         "registry_mode": os.getenv("SOURCE_REGISTRY_MODE", "auto").strip().lower(),
+        "image_provider": os.getenv("IMAGE_PROVIDER", "none").strip().lower(),
+        "image_base_url": os.getenv("IMAGE_BASE_URL", "https://image.pollinations.ai/prompt/"),
+        "image_model": os.getenv("IMAGE_MODEL", "flux"),
+        "image_timeout": int(os.getenv("IMAGE_TIMEOUT_SECONDS", "30")),
+        "image_fallback_to_text": env_bool(os.getenv("IMAGE_FALLBACK_TO_TEXT"), default=True),
     }
 
 
@@ -99,6 +104,11 @@ def _run_cards_once() -> None:
             content_db=content_db,
             mistral_model=os.getenv("MISTRAL_MODEL", "mistral-small-latest"),
             with_photos=env_bool(os.getenv("WITH_PHOTOS")),
+            image_provider=str(os.getenv("IMAGE_PROVIDER", "none")),
+            image_base_url=str(os.getenv("IMAGE_BASE_URL", "https://image.pollinations.ai/prompt/")),
+            image_model=str(os.getenv("IMAGE_MODEL", "flux")),
+            image_timeout=int(os.getenv("IMAGE_TIMEOUT_SECONDS", "30")),
+            image_fallback_to_text=env_bool(os.getenv("IMAGE_FALLBACK_TO_TEXT"), default=True),
             recent_card_ids=recent,
         )
         if post_id is not None:
@@ -132,7 +142,7 @@ def main() -> int:
             logger.info("Время постить!")
             try:
                 options = _daily_options()
-                run_daily(**{key: options[key] for key in ("vk_token", "vk_group_id", "mistral_api_key", "max_holidays", "mistral_model", "with_photos", "registry_path", "registry_mode")}, timezone_name=str(options["bot_timezone"]))
+                run_daily(**{key: options[key] for key in ("vk_token", "vk_group_id", "mistral_api_key", "max_holidays", "mistral_model", "with_photos", "registry_path", "registry_mode", "image_provider", "image_base_url", "image_model", "image_timeout", "image_fallback_to_text")}, timezone_name=str(options["bot_timezone"]))
             except Exception as exc:  # noqa: BLE001
                 logger.error("Ошибка при выполнении: %s", exc)
             time.sleep(60)

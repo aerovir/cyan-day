@@ -19,7 +19,7 @@ from .content_store import PLAN_VERSION, ContentCard, ContentError, ContentStore
 from .holidays_parser import HolidaysParser, Holiday
 from .source_registry import DEFAULT_DB_PATH, SourceRegistry
 from .sources import SourceError, SourceItem, deduplicate_source_items, validate_url
-from .vk_publisher import VKError, VKPublisher, VKUnknownError
+from .vk_publisher import VKError, VKPhotoUploadError, VKPublisher, VKUnknownError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,11 @@ SOURCE_REGISTRY_MODES = {"auto", "legacy", "registry"}
 IMAGE_HOSTS = ("calend.ru", "www.calend.ru")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 DEFAULT_BOT_TIMEZONE = "Europe/Moscow"
+IMAGE_PROVIDERS = {"none", "pollinations"}
+DEFAULT_IMAGE_BASE_URL = "https://image.pollinations.ai/prompt/"
+DEFAULT_IMAGE_MODEL = "flux"
+DEFAULT_IMAGE_TIMEOUT = 30
+MAX_PROMPT_LENGTH = 1000
 DEFAULT_SLOT_TIMES = "09:00,10:30,12:00,13:30,15:00,17:00,19:00"
 
 
@@ -93,7 +98,26 @@ def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[st
     post_minute = _parse_nonnegative_int(values.get("POST_MINUTE", "0"), "POST_MINUTE")
     if post_hour > 23 or post_minute > 59:
         raise ValueError("POST_HOUR must be 0..23 and POST_MINUTE must be 0..59")
+    image_provider = values.get("IMAGE_PROVIDER", "none").strip().lower()
+    if image_provider not in IMAGE_PROVIDERS:
+        raise ValueError("IMAGE_PROVIDER must be either 'none' or 'pollinations'")
+    image_timeout = _parse_positive_int(values.get("IMAGE_TIMEOUT_SECONDS", str(DEFAULT_IMAGE_TIMEOUT)), "IMAGE_TIMEOUT_SECONDS")
+    if image_timeout > 120:
+        raise ValueError("IMAGE_TIMEOUT_SECONDS must be at most 120")
+    image_model = values.get("IMAGE_MODEL", DEFAULT_IMAGE_MODEL).strip()
+    if image_provider == "pollinations" and not image_model:
+        raise ValueError("IMAGE_MODEL must not be empty when Pollinations is enabled")
+    image_base_url = values.get("IMAGE_BASE_URL", DEFAULT_IMAGE_BASE_URL).strip()
+    if image_provider == "pollinations":
+        validate_url(image_base_url, allowed_hosts=("image.pollinations.ai",), resolve=False)
+        if not image_base_url.rstrip("/").endswith("/prompt"):
+            raise ValueError("IMAGE_BASE_URL must point to the Pollinations /prompt endpoint")
     return {
+        "image_provider": image_provider,
+        "image_base_url": image_base_url,
+        "image_model": image_model,
+        "image_timeout": image_timeout,
+        "image_fallback_to_text": env_bool(values.get("IMAGE_FALLBACK_TO_TEXT"), default=True),
         "vk_group_id": parsed_group_id,
         "content_mode": mode,
         "bot_timezone": timezone_name,
@@ -102,6 +126,46 @@ def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[st
         "schedule_poll_seconds": poll_seconds,
         "max_holidays": max_holidays,
     }
+
+
+def _image_prompt(title: str, description: str, *, visual_brief: str = "", tags: Iterable[str] = ()) -> str:
+    """Build a bounded editorial prompt without facts or credentials."""
+    parts = [visual_brief.strip() or "archival satirical editorial illustration", title.strip(), description.strip()]
+    tag_text = ", ".join(tag for tag in tags if isinstance(tag, str) and tag.strip())
+    if tag_text:
+        parts.append(f"Themes: {tag_text}")
+    parts.append("No readable text, logos, modern brands, real persons, graphic intoxication, medical or political claims.")
+    return " ".join(part for part in parts if part)[:MAX_PROMPT_LENGTH]
+
+
+def _generated_image(
+    prompt: str,
+    *,
+    image_provider: str,
+    image_model: str,
+    image_timeout: int,
+    image_base_url: str,
+) -> Optional[str]:
+    if image_provider != "pollinations":
+        return None
+    try:
+        from .image_provider import PollinationsImageProvider
+        provider = PollinationsImageProvider(model=image_model, timeout=image_timeout, base_url=image_base_url)
+        return provider.generate(prompt, downloader=download_image)
+    except Exception as exc:  # noqa: BLE001 — image is optional
+        logger.warning("Не удалось сгенерировать картинку: %s", exc)
+        return None
+
+
+def _post_text_with_photo_fallback(publisher: VKPublisher, text: str, photo_path: Optional[str]) -> int:
+    """Retry once without photo only when upload failed before wall.post."""
+    try:
+        return publisher.post(message=text, photo_path=photo_path)
+    except VKPhotoUploadError:
+        if not photo_path:
+            raise
+        logger.warning("Загрузка фото не удалась; повторяю пост без картинки")
+        return publisher.post(message=text, photo_path=None)
 
 
 def _verified_text(card: ContentCard) -> str:
@@ -121,6 +185,11 @@ def run_content_slot(
     mistral_model: str = "mistral-small-latest",
     with_photos: bool = False,
     recent_card_ids: Iterable[str] = (),
+    image_provider: str = "none",
+    image_base_url: str = DEFAULT_IMAGE_BASE_URL,
+    image_model: str = DEFAULT_IMAGE_MODEL,
+    image_timeout: int = DEFAULT_IMAGE_TIMEOUT,
+    image_fallback_to_text: bool = True,
 ) -> int | None:
     """Generate and publish one planned editorial slot exactly once."""
     ledger_key = None
@@ -143,12 +212,19 @@ def run_content_slot(
         else:
             generated = generator.generate_for_content(card.packet())
             text = f"{generated.label}: {generated.body}"
-        if with_photos and card.image_url:
-            # Картинки карточек задаёт редактор, поэтому без allowlist хостов;
-            # остальные SSRF-проверки (https, без редиректов, без приватных IP) остаются.
-            photo_path = download_image(card.image_url, allowed_hosts=())
+        if with_photos:
+            if card.image_url:
+                # Картинки карточек задаёт редактор, поэтому без allowlist хостов;
+                # остальные SSRF-проверки сохраняются.
+                photo_path = download_image(card.image_url, allowed_hosts=())
+            else:
+                photo_path = _generated_image(
+                    _image_prompt(card.title, card.summary, tags=card.tags),
+                    image_provider=image_provider, image_model=image_model,
+                    image_timeout=image_timeout, image_base_url=image_base_url,
+                )
         publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
-        post_id = publisher.post(message=text, photo_path=photo_path)
+        post_id = _post_text_with_photo_fallback(publisher, text, photo_path)
         with ContentStore(content_db) as store:
             store.mark_published(local_date, slot_key, post_id, text, expected_idempotency_key=ledger_key)
         return post_id
@@ -375,6 +451,11 @@ def run_daily(
     registry_path: str | None = None,
     registry_mode: str = "auto",
     timezone_name: str = DEFAULT_BOT_TIMEZONE,
+    image_provider: str = "none",
+    image_base_url: str = DEFAULT_IMAGE_BASE_URL,
+    image_model: str = DEFAULT_IMAGE_MODEL,
+    image_timeout: int = DEFAULT_IMAGE_TIMEOUT,
+    image_fallback_to_text: bool = True,
 ) -> List[int]:
     """Основной цикл: собрать праздники, сгенерировать и опубликовать посты."""
     generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
@@ -397,9 +478,16 @@ def run_daily(
         try:
             logger.info("Обрабатываю праздник: %s", item.title)
             text = generator.generate_for_holiday(item)
-            if with_photos and item.image_url:
-                photo_path = download_image(item.image_url)
-            post_id = publisher.post(message=text, photo_path=photo_path)
+            if with_photos:
+                if item.image_url:
+                    photo_path = download_image(item.image_url)
+                else:
+                    photo_path = _generated_image(
+                        _image_prompt(item.title, item.description),
+                        image_provider=image_provider, image_model=image_model,
+                        image_timeout=image_timeout, image_base_url=image_base_url,
+                    )
+            post_id = _post_text_with_photo_fallback(publisher, text, photo_path)
             post_ids.append(post_id)
         except (AIError, VKError) as exc:
             logger.error("Не удалось опубликовать «%s»: %s", item.title, exc)
@@ -448,6 +536,11 @@ def main() -> int:
             registry_path=registry_path,
             registry_mode=registry_mode,
             timezone_name=timezone_name,
+            image_provider=str(runtime["image_provider"]),
+            image_base_url=str(runtime["image_base_url"]),
+            image_model=str(runtime["image_model"]),
+            image_timeout=int(runtime["image_timeout"]),
+            image_fallback_to_text=bool(runtime["image_fallback_to_text"]),
         )
     except (AIError, VKError, SourceError, OSError) as exc:
         logger.error("Ошибка выполнения: %s", exc)
