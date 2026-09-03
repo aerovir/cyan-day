@@ -266,6 +266,19 @@ pytest
   Получение требует создания приложения и подтверждения. Инструкция — в
   разделе ниже.
 
+### Ручная генерация изображения через Docker
+
+Команда запускает только запрос к Pollinations и сохраняет результат в `./output`; scheduler и VK не запускаются, секреты VK/Mistral не нужны:
+
+```bash
+mkdir -p output
+docker compose --profile images run --rm --no-deps image-admin generate \
+  --prompt "archival satirical illustration of a historic Russian tavern" \
+  --output tavern.jpg
+```
+
+Доступны `--model`, `--timeout`, `--force` и `--prompt-file`. Имя `--output` ограничено каталогом `/app/output`; существующий файл не перезаписывается без `--force`. Команда использует те же HTTPS/SSRF/MIME/10 MiB проверки, что и бот. Prompt передаётся внешнему сервису Pollinations и не должен содержать секреты или закрытые данные. Без API-ключа endpoint может быть ограничен rate limit или измениться.
+
 ### Как включить картинки (user-токен)
 
 1. Создай standalone-приложение на `https://id.vk.com/about/business/go`.

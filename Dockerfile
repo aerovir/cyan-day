@@ -12,7 +12,7 @@ WORKDIR /app
 # Запуск от непривилегированного пользователя; state и logs остаются writable.
 RUN addgroup --system bot \
     && adduser --system --ingroup bot bot \
-    && mkdir -p /app/logs /app/state \
+    && mkdir -p /app/logs /app/state /app/output \
     && chown -R bot:bot /app
 
 # Сначала зависимости — кэшируются слоем Docker

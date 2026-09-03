@@ -33,6 +33,27 @@ services:
         max-file: "3"
     stop_grace_period: 30s
 
+  image-admin:
+    profiles: ["images"]
+    build:
+      context: .
+    entrypoint: ["python", "-m", "app.image_admin"]
+    restart: "no"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - cyan_isolated
+    volumes:
+      - ./output:/app/output:rw
+    healthcheck:
+      disable: true
+
 
 volumes:
   bot_logs:
