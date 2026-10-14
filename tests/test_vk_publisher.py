@@ -1,7 +1,7 @@
 """Тесты для публикации постов в VK через vk_api."""
 import pytest
 
-from app.vk_publisher import VKError, VKPublisher, VKResultError, VKTransportError
+from app.vk_publisher import VKError, VKPhotoUploadError, VKPublisher, VKResultError, VKTransportError
 
 
 @pytest.fixture
@@ -61,6 +61,21 @@ class TestVKPublisher:
         upload.photo_wall.assert_called_once()
         call_kwargs = api.wall.post.call_args.kwargs
         assert "photo-123456789_999" in call_kwargs["attachment"]
+
+    def test_photo_upload_error_keeps_code_and_redacts_token(self, publisher, vk_session_mock, mocker, tmp_path):
+        upload = mocker.patch("app.vk_publisher.vk_api.VkUpload").return_value
+        error = vk_api_error("permission denied for token=test-token")
+        error.code = 27
+        upload.photo_wall.side_effect = error
+        photo = tmp_path / "photo.jpg"
+        photo.write_bytes(b"\\xff\\xd8\\xffdata")
+
+        with pytest.raises(VKPhotoUploadError) as raised:
+            publisher.post(message="post", photo_path=str(photo))
+
+        assert raised.value.code == 27
+        assert "permission denied" in raised.value.reason
+        assert "test-token" not in raised.value.reason
 
     def test_post_without_photo_has_no_attachment(self, publisher, vk_session_mock):
         """Пост без фото не должен иметь attachment."""

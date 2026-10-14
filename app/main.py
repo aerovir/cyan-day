@@ -233,10 +233,10 @@ def _post_text_with_photo_fallback(publisher: VKPublisher, text: str, photo_path
     """Retry once without photo only when upload failed before wall.post."""
     try:
         return publisher.post(message=text, photo_path=photo_path)
-    except VKPhotoUploadError:
+    except VKPhotoUploadError as exc:
         if not photo_path:
             raise
-        logger.warning("Загрузка фото не удалась; повторяю пост без картинки")
+        logger.warning("VK photo upload failed (code=%s): %s; retrying text-only", exc.code, exc.reason)
         return publisher.post(message=text, photo_path=None)
 
 

@@ -191,7 +191,7 @@ def test_cloudflare_generation_error_is_logged_without_token(mocker, caplog):
     assert "never-log-this-token" not in caplog.text
 
 
-def test_vk_photo_upload_failure_retries_text_only(mocker, tmp_path):
+def test_vk_photo_upload_failure_retries_text_only(mocker, tmp_path, caplog):
     from app.main import run_content_slot
     from app.vk_publisher import VKPhotoUploadError
     content_db = str(tmp_path / "content.sqlite3")
@@ -203,9 +203,12 @@ def test_vk_photo_upload_failure_retries_text_only(mocker, tmp_path):
     pub_mock = mocker.Mock()
     pub_mock.post.side_effect = [VKPhotoUploadError("permission", code=27), 7]
     mocker.patch("app.main.VKPublisher", return_value=pub_mock)
-    assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, with_photos=True) == 7
+    with caplog.at_level("WARNING", logger="app.main"):
+        assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, with_photos=True) == 7
     assert pub_mock.post.call_count == 2
     assert pub_mock.post.call_args_list[-1].kwargs["photo_path"] is None
+    assert "code=27" in caplog.text
+    assert "permission" in caplog.text
 
 
 class TestTodayStr:

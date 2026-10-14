@@ -9,6 +9,7 @@ import io
 import logging
 import os
 from collections.abc import Mapping
+from urllib.parse import quote, quote_plus
 from typing import Any, Optional
 
 import vk_api
@@ -37,9 +38,10 @@ class VKError(Exception):
 class VKPhotoUploadError(VKError):
     """Photo upload failed before wall.post was called."""
 
-    def __init__(self, message: str, code: int | None = None) -> None:
+    def __init__(self, message: str, code: int | None = None, reason: str = "") -> None:
         super().__init__(message)
         self.code = code
+        self.reason = reason or message
 
 
 class VKPublisher:
@@ -57,6 +59,7 @@ class VKPublisher:
         """
         if not token:
             raise VKError("VK_TOKEN не задан")
+        self._token = token
         self.group_id = int(group_id)
         self.owner_id = -self.group_id  # для групп owner_id отрицательный
 
@@ -108,6 +111,13 @@ class VKPublisher:
         logger.info("Опубликован пост #%s (attachment: %s)", post_id, attachment)
         return post_id
 
+    def _safe_error_text(self, error: object) -> str:
+        text = str(error)
+        for secret in (self._token, quote(self._token, safe=""), quote_plus(self._token)):
+            if secret:
+                text = text.replace(secret, "[REDACTED]")
+        return text[:500]
+
     def _upload_photo(self, photo_path: str) -> str:
         """Загрузить фото на сервер VK для поста на стену.
 
@@ -127,7 +137,8 @@ class VKPublisher:
             )
         except VkApiError as exc:
             code = getattr(exc, "code", None)
-            raise VKPhotoUploadError(f"Ошибка загрузки фото в VK: {exc}", code=code) from exc
+            reason = self._safe_error_text(exc)
+            raise VKPhotoUploadError("Ошибка загрузки фото в VK", code=code, reason=reason) from exc
         except (OSError, TypeError, IndexError, KeyError) as exc:
             raise VKPhotoUploadError(f"Ошибка подготовки фото для VK: {exc}") from exc
 
