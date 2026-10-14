@@ -1,12 +1,19 @@
 """Tests for the Pollinations image provider without real network access."""
 
+import base64
+import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+import requests
 
 from app.image_provider import (
     ALLOWED_HOSTS,
     MAX_PROMPT_LENGTH,
+    CloudflareImageProvider,
+    ImageConfigError,
+    ImageGenerationError,
     PollinationsImageProvider,
 )
 
@@ -75,3 +82,103 @@ def test_generate_delegates_download_to_injected_callable():
 def test_generate_rejects_non_callable_downloader():
     with pytest.raises(TypeError, match="downloader must be callable"):
         PollinationsImageProvider().generate("a toast", downloader="not callable")
+
+
+_ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
+_MODEL = "@cf/black-forest-labs/flux-1-schnell"
+
+
+def test_cloudflare_provider_posts_prompt_dimensions_and_returns_image(tmp_path, requests_mock):
+    image = bytes([137]) + b"PNG\r\n\x1a\nimage-bytes"
+    requests_mock.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}/ai/run/{_MODEL}",
+        json={"success": True, "result": {"image": base64.b64encode(image).decode()}},
+    )
+    provider = CloudflareImageProvider(
+        account_id=_ACCOUNT_ID,
+        api_token="secret-token",
+        model=_MODEL,
+        timeout=45,
+    )
+
+    path = provider.generate("a blue glass")
+    try:
+        request = requests_mock.calls[0].request
+        body = json.loads(request.body)
+        assert request.url.endswith("/ai/run/" + _MODEL)
+        assert request.headers["Authorization"] == "Bearer secret-token"
+        assert body == {"prompt": "a blue glass"}
+        assert Path(path).read_bytes() == image
+        assert Path(path).suffix == ".png"
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def test_cloudflare_provider_accepts_raw_image_response(requests_mock, tmp_path):
+    image = bytes([255, 216, 255]) + b"raw-jpeg"
+    requests_mock.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}/ai/run/{_MODEL}",
+        body=image,
+        content_type="image/jpeg",
+    )
+    provider = CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="token", model=_MODEL)
+
+    path = provider.generate("a blue glass")
+    try:
+        assert Path(path).read_bytes() == image
+        assert Path(path).suffix == ".jpg"
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+def test_cloudflare_provider_rejects_missing_credentials_and_invalid_model():
+    with pytest.raises(ImageConfigError, match="account ID"):
+        CloudflareImageProvider(account_id="bad", api_token="token")
+    with pytest.raises(ImageConfigError, match="API token"):
+        CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token=" ")
+    with pytest.raises(ImageConfigError, match="model"):
+        CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="token", model="../bad")
+
+
+def test_cloudflare_provider_rejects_invalid_response_and_does_not_leak_token(requests_mock):
+    requests_mock.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}/ai/run/{_MODEL}",
+        json={"success": False, "errors": [{"message": "denied"}]},
+        status=401,
+    )
+    provider = CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="super-secret", model=_MODEL)
+
+    with pytest.raises(ImageGenerationError) as exc:
+        provider.generate("prompt")
+
+    assert "super-secret" not in str(exc.value)
+    assert "401" in str(exc.value)
+
+
+def test_cloudflare_provider_rejects_bad_base64_and_oversized_image(requests_mock):
+    requests_mock.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}/ai/run/{_MODEL}",
+        json={"success": True, "result": {"image": "!!!"}},
+    )
+    provider = CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="token", model=_MODEL)
+    with pytest.raises(ImageGenerationError, match="base64"):
+        provider.generate("prompt")
+
+    image = bytes([137]) + b"PNG\r\n\x1a\n1234567890"
+    requests_mock.reset()
+    requests_mock.post(
+        f"https://api.cloudflare.com/client/v4/accounts/{_ACCOUNT_ID}/ai/run/{_MODEL}",
+        json={"success": True, "result": {"image": base64.b64encode(image).decode()}},
+    )
+    provider = CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="token", model=_MODEL, max_image_bytes=8)
+    with pytest.raises(ImageGenerationError, match="too large"):
+        provider.generate("prompt")
+
+
+def test_cloudflare_provider_converts_timeout_to_generation_error(mocker):
+    from app import image_provider
+
+    mocker.patch.object(image_provider.requests, "post", side_effect=requests.Timeout())
+    provider = CloudflareImageProvider(account_id=_ACCOUNT_ID, api_token="token", model=_MODEL)
+    with pytest.raises(ImageGenerationError, match="request failed"):
+        provider.generate("prompt")

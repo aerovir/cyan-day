@@ -41,3 +41,19 @@ def test_import_directory_without_json_fails(tmp_path, capsys):
 
     assert exit_code == 2
     assert "no JSON files" in capsys.readouterr().out
+
+
+def test_draft_cli_creates_and_shows_one_unpublished_draft(tmp_path, capsys):
+    db = str(tmp_path / "content.sqlite3")
+    text = "Тестовый черновик без даты публикации."
+
+    assert run(["--db", db, "draft", "create", "--text", text, "--notification-state", "failed", "--notification-error", "VK API error 901"]) == 0
+    created = json.loads(capsys.readouterr().out)
+    assert created["status"] == "draft"
+    assert created["text"] == text
+    assert "publish_at" not in created
+
+    assert run(["--db", db, "draft", "show"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["id"] == created["id"]
+    assert shown["notification_state"] == "failed"

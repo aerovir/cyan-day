@@ -1,4 +1,4 @@
-"""Deterministic seven-slot content planner."""
+"""Deterministic six-slot content planner."""
 from __future__ import annotations
 
 import hashlib
@@ -7,9 +7,9 @@ from datetime import date, datetime, time, timedelta
 from typing import Iterable, Sequence
 from zoneinfo import ZoneInfo
 
-from .content_store import ContentCard, SLOT_DEFINITIONS
+from .content_store import ContentCard, RECIPE_TYPES, SLOT_DEFINITIONS
 
-DEFAULT_TIMEZONE = "Europe/Moscow"
+DEFAULT_TIMEZONE = "Etc/GMT-2"
 
 @dataclass(frozen=True)
 class PlannedSlot:
@@ -20,6 +20,8 @@ class PlannedSlot:
     score: float
     reason: str
     state: str = "planned"
+    content_type: str = "card"
+    recipe_type: str | None = None
 
 
 def _tags(card: ContentCard) -> set[str]:
@@ -39,13 +41,24 @@ def _score(card: ContentCard, requirements: Sequence[str], selected: Sequence[Co
     return score + tie
 
 
-def build_plan(local_date: str, cards: Sequence[ContentCard], recent_card_ids: Iterable[str] = ()) -> list[PlannedSlot]:
-    """Select at most one card per semantic slot, deterministically."""
+def build_plan(
+    local_date: str,
+    cards: Sequence[ContentCard],
+    recent_card_ids: Iterable[str] = (),
+    *,
+    recipe_type: str | None = None,
+) -> list[PlannedSlot]:
+    """Select cards for editorial slots and optionally schedule a recipe action."""
     available = [card for card in cards if card.active and card.status in {"verified", "unverified", "disputed", "refuted", "rejected"}]
     selected: list[ContentCard] = []
     plan: list[PlannedSlot] = []
     recent = tuple(recent_card_ids)
+    if recipe_type is not None and recipe_type not in RECIPE_TYPES:
+        raise ValueError("recipe_type must be joke or classic")
     for slot_key, local_time, requirements, strict in SLOT_DEFINITIONS:
+        if slot_key == "drink" and recipe_type is not None:
+            plan.append(PlannedSlot(local_date, slot_key, local_time, None, 0, "Gemini cocktail recipe", content_type="recipe", recipe_type=recipe_type))
+            continue
         pool = [card for card in available if card not in selected and any(tag in _tags(card) for tag in requirements)]
         if not pool and not strict:
             pool = [card for card in available if card not in selected]
@@ -66,10 +79,15 @@ def due_at(local_date: str, local_time: str, timezone: str = DEFAULT_TIMEZONE) -
 
 def parse_slot_times(value: str) -> tuple[str, ...]:
     values = tuple(part.strip() for part in value.split(",") if part.strip())
-    if len(values) != 7:
-        raise ValueError("SLOT_TIMES must contain exactly seven times")
+    expected = tuple(local_time for _key, local_time, _requirements, _strict in SLOT_DEFINITIONS)
+    if len(values) != len(SLOT_DEFINITIONS):
+        raise ValueError(f"SLOT_TIMES must contain exactly {len(SLOT_DEFINITIONS)} times")
+    if len(set(values)) != len(values):
+        raise ValueError("SLOT_TIMES must not contain duplicates")
     for value in values:
         parsed = time.fromisoformat(value)
         if parsed.second or parsed.microsecond:
             raise ValueError("slot times must use HH:MM")
+    if values != expected:
+        raise ValueError("SLOT_TIMES must match the ordered slot definitions")
     return values

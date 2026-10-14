@@ -41,7 +41,7 @@ jobs:
 
   # Смоук-тест реального AI-генератора с ключом из секретов.
   # Запускается по расписанию (ежедневно) и при ручном вызове.
-  smoke-mistral:
+  smoke-gemini:
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -60,7 +60,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Smoke test Mistral API
+      - name: Smoke test Gemini API
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python -m app.ai_generator --smoke

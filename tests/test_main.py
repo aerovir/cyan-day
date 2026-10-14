@@ -18,39 +18,104 @@ def test_today_str_uses_requested_timezone(mocker):
 def test_validate_runtime_config_rejects_club_group_id():
     from app.main import validate_runtime_config
     with pytest.raises(ValueError, match="without the 'club' prefix"):
-        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "club123", "MISTRAL_API_KEY": "k"})
+        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "club123", "GEMINI_API_KEY": "k"})
 
 
-def test_validate_runtime_config_requires_seven_slot_times():
+def test_validate_runtime_config_requires_six_slot_times():
     from app.main import validate_runtime_config
-    with pytest.raises(ValueError, match="exactly seven"):
-        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k", "SLOT_TIMES": "09:00"})
+    with pytest.raises(ValueError, match="exactly 6"):
+        validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k", "SLOT_TIMES": "09:00"})
 
 
 def test_validate_runtime_config_accepts_cards_config():
     from app.main import validate_runtime_config
-    config = validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k", "CONTENT_MODE": "cards"})
+    config = validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k", "CONTENT_MODE": "cards"})
     assert config["vk_group_id"] == 123
     assert config["content_mode"] == "cards"
+
+
+def test_validate_runtime_config_uses_fixed_utc_plus_two_six_slot_defaults():
+    from app.main import validate_runtime_config
+
+    config = validate_runtime_config({"VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k"})
+    assert config["content_mode"] == "cards"
+    assert config["bot_timezone"] == "Etc/GMT-2"
+    assert config["slot_times"] == ("12:00", "14:00", "16:00", "18:00", "20:00", "22:00")
+    assert config["slot_grace_seconds"] == 300
+
+
+def test_validate_runtime_config_rejects_duplicate_slot_times():
+    from app.main import validate_runtime_config
+
+    with pytest.raises(ValueError, match="must not contain duplicates"):
+        validate_runtime_config({
+            "VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k",
+            "SLOT_TIMES": "12:00,14:00,16:00,18:00,20:00,20:00",
+        })
 
 
 def test_validate_runtime_config_accepts_pollinations_config():
     from app.main import validate_runtime_config
     config = validate_runtime_config({
-        "VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k",
+        "VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k",
         "IMAGE_PROVIDER": "pollinations",
     })
     assert config["image_provider"] == "pollinations"
     assert config["image_model"] == "flux"
 
 
+def test_validate_runtime_config_accepts_cloudflare_image_config():
+    from app.main import validate_runtime_config
+
+    config = validate_runtime_config({
+        "VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k",
+        "IMAGE_PROVIDER": "cloudflare",
+        "CLOUDFLARE_ACCOUNT_ID": "0123456789abcdef0123456789abcdef",
+        "CLOUDFLARE_API_TOKEN": "secret-token",
+        "CLOUDFLARE_IMAGE_MODEL": "@cf/black-forest-labs/flux-1-schnell",
+    })
+    assert config["image_provider"] == "cloudflare"
+    assert config["cloudflare_model"] == "@cf/black-forest-labs/flux-1-schnell"
+
+
+def test_validate_runtime_config_requires_cloudflare_credentials_only_when_selected():
+    from app.main import validate_runtime_config
+
+    with pytest.raises(ValueError, match="CLOUDFLARE_ACCOUNT_ID is required"):
+        validate_runtime_config({
+            "VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k",
+            "IMAGE_PROVIDER": "cloudflare",
+        })
+
+
 def test_validate_runtime_config_rejects_unsafe_pollinations_url():
     from app.main import validate_runtime_config
     with pytest.raises(ValueError, match="https"):
         validate_runtime_config({
-            "VK_TOKEN": "t", "VK_GROUP_ID": "123", "MISTRAL_API_KEY": "k",
+            "VK_TOKEN": "t", "VK_GROUP_ID": "123", "GEMINI_API_KEY": "k",
             "IMAGE_PROVIDER": "pollinations", "IMAGE_BASE_URL": "http://image.pollinations.ai/prompt",
         })
+
+
+def test_cloudflare_image_provider_receives_runtime_settings(mocker):
+    from app.main import _generated_image
+
+    provider = mocker.Mock()
+    provider.generate.return_value = "/tmp/image.png"
+    cloudflare = mocker.patch("app.image_provider.CloudflareImageProvider", return_value=provider)
+
+    result = _generated_image(
+        "prompt", image_provider="cloudflare", image_model="ignored", image_timeout=30,
+        image_base_url="ignored", cloudflare_account_id="account", cloudflare_api_token="token",
+        cloudflare_model="@cf/black-forest-labs/flux-1-schnell", cloudflare_timeout=90,
+    )
+
+    assert result == "/tmp/image.png"
+    cloudflare.assert_called_once_with(
+        account_id="account", api_token="token", model="@cf/black-forest-labs/flux-1-schnell",
+        timeout=90,
+    )
+    provider.generate.assert_called_once_with("prompt")
 
 
 def test_image_provider_is_not_called_when_photos_disabled(mocker, tmp_path):
@@ -77,6 +142,53 @@ def test_pollinations_image_failure_falls_back_to_text(mocker, tmp_path):
     mocker.patch("app.main.VKPublisher", return_value=pub_mock)
     assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db, with_photos=True, image_provider="pollinations") == 1
     assert pub_mock.post.call_args.kwargs["photo_path"] is None
+
+
+def test_card_image_prompt_uses_final_generated_text(mocker, tmp_path):
+    from app.main import run_content_slot
+
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.import_card(make_content_card(status="unverified"))
+    generator = mocker.Mock()
+    generator.generate_for_content.return_value = GeneratedContent(
+        label="МИФ", body="Итоговый сгенерированный текст.", claims_used=("c1",), unsupported_claims=()
+    )
+    mocker.patch("app.main.AIGenerator", return_value=generator)
+    pub_mock = mocker.Mock()
+    pub_mock.post.return_value = 88
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+    image_mock = mocker.patch("app.main._generated_image", return_value=None)
+
+    assert run_content_slot(
+        "tok", 123, "key", "2026-08-31", "context", content_db=content_db,
+        with_photos=True, image_provider="cloudflare",
+    ) == 88
+
+    prompt = image_mock.call_args.args[0]
+    assert "Итоговый сгенерированный текст." in prompt
+    assert "Стакан как символ эпохи." not in prompt
+
+
+def test_cloudflare_generation_error_is_logged_without_token(mocker, caplog):
+    from app.image_provider import ImageGenerationError
+    from app.main import _generated_image
+
+    provider = mocker.Mock()
+    provider.generate.side_effect = ImageGenerationError("Cloudflare Workers AI returned HTTP 503")
+    mocker.patch("app.image_provider.CloudflareImageProvider", return_value=provider)
+
+    with caplog.at_level("ERROR", logger="app.main"):
+        result = _generated_image(
+            "final post text", image_provider="cloudflare", image_model="flux",
+            image_timeout=30, image_base_url="unused", cloudflare_account_id="account",
+            cloudflare_api_token="never-log-this-token",
+        )
+
+    assert result is None
+    assert "continuing with text-only post" in caplog.text
+    assert "Cloudflare Workers AI returned HTTP 503" in caplog.text
+    assert "never-log-this-token" not in caplog.text
 
 
 def test_vk_photo_upload_failure_retries_text_only(mocker, tmp_path):
@@ -154,13 +266,30 @@ class TestRunDaily:
         run_daily(
             vk_token="tok",
             vk_group_id=123,
-            mistral_api_key="key",
+            gemini_api_key="key",
         )
 
         assert pub_mock.post.call_count == 2
         # Проверяем, что сообщения передаются
         messages = [c.kwargs.get("message") for c in pub_mock.post.call_args_list]
         assert all(m and "Ироничный текст" in m for m in messages)
+
+    def test_legacy_image_prompt_uses_final_generated_text(self, mocker):
+        item = make_item()
+        mocker.patch("app.main._collect_items", return_value=[item])
+        generator = mocker.Mock()
+        generator.generate_for_holiday.return_value = "Итоговый текст legacy-поста."
+        mocker.patch("app.main.AIGenerator", return_value=generator)
+        publisher = mocker.Mock()
+        publisher.post.return_value = 1
+        mocker.patch("app.main.VKPublisher", return_value=publisher)
+        image_mock = mocker.patch("app.main._generated_image", return_value=None)
+
+        run_daily("tok", 123, "key", with_photos=True)
+
+        prompt = image_mock.call_args.args[0]
+        assert "Итоговый текст legacy-поста." in prompt
+        assert item.description not in prompt
 
     def test_run_daily_no_holidays_does_nothing(self, mocker):
         """Если праздников нет, не должно быть публикаций."""
@@ -178,7 +307,7 @@ class TestRunDaily:
         run_daily(
             vk_token="tok",
             vk_group_id=123,
-            mistral_api_key="key",
+            gemini_api_key="key",
         )
 
         assert pub_mock.post.call_count == 0
@@ -201,7 +330,7 @@ class TestRunDaily:
         run_daily(
             vk_token="tok",
             vk_group_id=123,
-            mistral_api_key="key",
+            gemini_api_key="key",
             max_holidays=3,
         )
 
@@ -332,6 +461,7 @@ class TestRunContentSlot:
         assert post_id == 123
         message = pub_mock.post.call_args.kwargs["message"]
         assert message.startswith("ФАКТ:") and "Стакан стал символом СССР." in message
+        assert message.endswith("#topic_context #status_verified")
         # Повторный запуск того же слота не публикует повторно
         assert run_content_slot("tok", 123, "key", "2026-08-31", "fact", content_db=content_db) is None
         assert pub_mock.post.call_count == 1
@@ -351,12 +481,12 @@ class TestRunContentSlot:
         pub_mock.post.return_value = 5
         mocker.patch("app.main.VKPublisher", return_value=pub_mock)
 
-        # unverified-карточка не попадает в strict fact-слот; первый дневной
-        # слот с фолбэком (drink) заберёт её
-        post_id = run_content_slot("tok", 123, "key", "2026-08-31", "drink", content_db=content_db)
+        # unverified-карточка не попадает в strict fact-слот; контекстный слот
+        # с фолбэком заберёт её
+        post_id = run_content_slot("tok", 123, "key", "2026-08-31", "context", content_db=content_db)
 
         assert post_id == 5
-        assert pub_mock.post.call_args.kwargs["message"] == "МИФ: ироничный разбор мифа"
+        assert pub_mock.post.call_args.kwargs["message"] == "МИФ: ироничный разбор мифа\n\n#topic_context #status_unverified"
 
     def test_run_content_slot_attaches_image_when_enabled(self, mocker, tmp_path):
         from app.main import run_content_slot
@@ -408,6 +538,22 @@ def test_plan_content_day_forwards_recent_cards_to_planner(mocker, tmp_path):
     assert planner_mock.call_args.args[2] == ("card-9",)
 
 
+def test_plan_content_day_persists_random_recipe_type(mocker, tmp_path):
+    from app.main import plan_content_day
+
+    choice = mocker.patch("app.main.random.choice", return_value="classic")
+    content_db = str(tmp_path / "content.sqlite3")
+
+    first = plan_content_day("2026-08-31", content_db=content_db)
+    choice.return_value = "joke"
+    second = plan_content_day("2026-08-31", content_db=content_db)
+
+    first_drink = next(row for row in first if row["slot_key"] == "drink")
+    second_drink = next(row for row in second if row["slot_key"] == "drink")
+    assert first_drink["recipe_type"] == second_drink["recipe_type"] == "classic"
+    choice.assert_called_once_with(["classic", "joke"])
+
+
 def test_plan_content_day_regenerates_stale_plan_version(tmp_path):
     from app.content_planner import build_plan
     from app.main import plan_content_day
@@ -420,7 +566,28 @@ def test_plan_content_day_regenerates_stale_plan_version(tmp_path):
 
     result = plan_content_day("2026-08-31", content_db=content_db)
 
-    assert result[0]["plan_version"] == 2
+    assert result[0]["plan_version"] == 3
+
+
+def test_replanning_preserves_published_fact_card_for_the_same_date(tmp_path):
+    from app.content_planner import build_plan
+    from app.main import plan_content_day
+
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        first = store.import_card(make_content_card(card_id="published-fact"))
+        store.import_card(make_content_card(card_id="other-fact"))
+        store.save_plan("2026-08-31", build_plan("2026-08-31", [first]), plan_version=2)
+        assert store.claim_slot("2026-08-31", "fact", first)
+        store.mark_published("2026-08-31", "fact", 44, "ФАКТ: опубликовано")
+
+    plan_content_day("2026-08-31", content_db=content_db)
+
+    with ContentStore(content_db) as store:
+        ledger = store.get_publication("2026-08-31", "fact")
+        planned = store.planned_slot("2026-08-31", "fact")
+        assert ledger["vk_post_id"] == 44
+        assert planned["card_id"] == ledger["card_id"] == "published-fact"
 
 
 def test_fact_slot_publishes_verified_card(mocker, tmp_path):
@@ -437,3 +604,30 @@ def test_fact_slot_publishes_verified_card(mocker, tmp_path):
 
     assert post_id == 42
     assert pub_mock.post.call_args.kwargs["message"].startswith("ФАКТ:")
+
+
+def test_run_content_slot_generates_and_tags_recipe_action(mocker, tmp_path):
+    from app.content_planner import build_plan
+    from app.main import run_content_slot
+
+    content_db = str(tmp_path / "content.sqlite3")
+    with ContentStore(content_db) as store:
+        store.save_plan("2026-08-31", build_plan("2026-08-31", [], recipe_type="joke"))
+    generator = mocker.Mock()
+    generator.generate_recipe.return_value = "Мартини\nИнгредиенты: ..."
+    mocker.patch("app.main.AIGenerator", return_value=generator)
+    pub_mock = mocker.Mock()
+    pub_mock.post.return_value = 314
+    mocker.patch("app.main.VKPublisher", return_value=pub_mock)
+
+    post_id = run_content_slot("tok", 123, "key", "2026-08-31", "drink", content_db=content_db)
+
+    assert post_id == 314
+    generator.generate_recipe.assert_called_once_with("joke")
+    message = pub_mock.post.call_args.kwargs["message"]
+    assert message.startswith("Мартини")
+    assert message.endswith("#drink_cocktail #format_recipe #tone_ironic")
+    with ContentStore(content_db) as store:
+        ledger = store.get_publication("2026-08-31", "drink")
+        assert ledger["state"] == "published"
+        assert ledger["generated_text"] == message

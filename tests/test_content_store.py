@@ -3,7 +3,7 @@
 import pytest
 
 from app.content_planner import build_plan
-from app.content_store import ContentError, ContentStore
+from app.content_store import ContentError, ContentStore, SLOT_DEFINITIONS
 
 
 def make_card(card_id="card-1", status="verified", tags=("topic.context",), image_url="", source_type="academic", calendar_day="08-31"):
@@ -36,6 +36,86 @@ def test_planned_card_returns_card_from_saved_plan():
         assert result.card_id == "card-1"
         # Пустой слот остаётся пустым
         assert store.planned_card("2026-08-31", "drink") is None
+
+
+def test_recipe_slot_plan_persists_action_and_recipe_type():
+    with ContentStore(":memory:") as store:
+        card = store.import_card(make_card())
+        plan = build_plan("2026-08-31", [card], recipe_type="classic")
+        store.save_plan("2026-08-31", plan)
+
+        slot = store.planned_slot("2026-08-31", "drink")
+        assert slot["content_type"] == "recipe"
+        assert slot["recipe_type"] == "classic"
+        assert store.planned_card("2026-08-31", "drink") is None
+
+
+def test_plan_refresh_removes_obsolete_slots_without_touching_ledger():
+    with ContentStore(":memory:") as store:
+        card = store.import_card(make_card())
+        old = build_plan("2026-08-31", [card])
+        store.save_plan("2026-08-31", old)
+        assert store.claim_slot("2026-08-31", "fact", card)
+        store.mark_published("2026-08-31", "fact", 99, "ФАКТ")
+
+        new = build_plan("2026-08-31", [card], recipe_type="joke")
+        store.save_plan("2026-08-31", new, plan_version=3)
+
+        assert [row["slot_key"] for row in store.get_plan("2026-08-31")] == sorted(key for key, *_ in SLOT_DEFINITIONS)
+        assert store.get_publication("2026-08-31", "fact")["vk_post_id"] == 99
+
+
+def test_claim_recipe_slot_uses_same_idempotent_target():
+    with ContentStore(":memory:") as store:
+        assert store.claim_slot("2026-08-31", "drink", None, recipe_type="joke")
+        assert not store.claim_slot("2026-08-31", "drink", None, recipe_type="classic")
+        row = store.get_publication("2026-08-31", "drink")
+        assert row["card_id"] == "__recipe__"
+        assert row["state"] == "publishing"
+
+
+def test_migration_adds_recipe_action_columns_to_existing_plan(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "legacy-content.sqlite3")
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE publication_plan(local_date TEXT NOT NULL, slot_key TEXT NOT NULL, card_id TEXT, revision INTEGER, score REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'planned', plan_version INTEGER NOT NULL DEFAULT 2, PRIMARY KEY(local_date,slot_key))")
+    conn.execute("INSERT INTO publication_plan(local_date,slot_key,card_id,revision,score,reason,state,plan_version) VALUES('2026-08-31','fact','card-1',1,1,'old plan','planned',2)")
+    conn.commit()
+    conn.close()
+
+    with ContentStore(path) as store:
+        row = store.planned_slot("2026-08-31", "fact")
+        assert row["card_id"] == "card-1"
+        assert row["content_type"] == "card"
+        assert row["recipe_type"] is None
+
+
+def test_test_draft_is_single_persistent_record_and_not_publication():
+    with ContentStore(":memory:") as store:
+        first = store.create_or_get_test_draft(
+            "Тестовый черновик без даты публикации.",
+            notification_state="failed",
+            notification_error="VK API error 901",
+        )
+        second = store.create_or_get_test_draft("другой текст")
+
+        assert first["id"] == second["id"] == 1
+        assert first["status"] == "draft"
+        assert first["text"] == second["text"] == "Тестовый черновик без даты публикации."
+        assert "publish_at" not in first
+        assert first["notification_state"] == "failed"
+        assert store.conn.execute("SELECT COUNT(*) FROM test_drafts").fetchone()[0] == 1
+        assert store.publication_ledger() == []
+        assert store.publication_targets() == []
+
+
+def test_test_draft_notification_can_be_marked_sent():
+    with ContentStore(":memory:") as store:
+        store.create_or_get_test_draft("черновик")
+        draft = store.set_test_draft_notification("sent")
+        assert draft["notification_state"] == "sent"
+        assert draft["notification_error"] == ""
 
 
 def test_claims_are_restored_with_text_key():
@@ -124,7 +204,7 @@ def test_slot_definitions_reseeded(tmp_path):
         )
     with ContentStore(path) as store:
         keys = [row["slot_key"] for row in store.slots()]
-        assert keys == ["fact", "drink", "context", "custom_law", "trade", "myth", "analysis"]
+        assert keys == ["fact", "drink", "context", "custom_law", "myth", "analysis"]
 
 
 def test_claim_slot_retries_after_failure():

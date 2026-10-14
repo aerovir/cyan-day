@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import re
 import sys
 import tempfile
 from datetime import datetime
@@ -13,9 +15,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 from dotenv import load_dotenv
 
-from .ai_generator import AIGenerator, AIError
-from .content_planner import build_plan
-from .content_store import PLAN_VERSION, ContentCard, ContentError, ContentStore, DEFAULT_CONTENT_DB
+from .ai_generator import AIGenerator, AIError, AIRateLimitError
+from .content_planner import PlannedSlot, build_plan
+from .content_store import PLAN_VERSION, RECIPE_LEDGER_CARD_ID, RECIPE_TYPES, SLOT_DEFINITIONS, ContentCard, ContentError, ContentStore, DEFAULT_CONTENT_DB
 from .holidays_parser import HolidaysParser, Holiday
 from .source_registry import DEFAULT_DB_PATH, SourceRegistry
 from .sources import SourceError, SourceItem, deduplicate_source_items, validate_url
@@ -27,13 +29,13 @@ CONTENT_LABELS = {"verified": "ФАКТ", "unverified": "МИФ", "disputed": "�
 SOURCE_REGISTRY_MODES = {"auto", "legacy", "registry"}
 IMAGE_HOSTS = ("calend.ru", "www.calend.ru")
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
-DEFAULT_BOT_TIMEZONE = "Europe/Moscow"
-IMAGE_PROVIDERS = {"none", "pollinations"}
+DEFAULT_BOT_TIMEZONE = "Etc/GMT-2"
+IMAGE_PROVIDERS = {"none", "pollinations", "cloudflare"}
 DEFAULT_IMAGE_BASE_URL = "https://image.pollinations.ai/prompt/"
 DEFAULT_IMAGE_MODEL = "flux"
 DEFAULT_IMAGE_TIMEOUT = 30
 MAX_PROMPT_LENGTH = 1000
-DEFAULT_SLOT_TIMES = "09:00,10:30,12:00,13:30,15:00,17:00,19:00"
+DEFAULT_SLOT_TIMES = ",".join(local_time for _key, local_time, _requirements, _strict in SLOT_DEFINITIONS)
 
 
 def timezone_for(name: str = DEFAULT_BOT_TIMEZONE) -> ZoneInfo:
@@ -43,6 +45,33 @@ def timezone_for(name: str = DEFAULT_BOT_TIMEZONE) -> ZoneInfo:
     except (AttributeError, ZoneInfoNotFoundError) as exc:
         raise ValueError(f"invalid BOT_TIMEZONE: {name!r}") from exc
 
+
+
+def _parse_positive_float(value: str, name: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive number") from exc
+    if parsed <= 0:
+        raise ValueError(f"{name} must be a positive number")
+    return parsed
+
+
+def gemini_runtime_options(values: Mapping[str, str]) -> dict[str, object]:
+    result = {
+        "max_retries": _parse_positive_int(values.get("GEMINI_MAX_RETRIES", "3"), "GEMINI_MAX_RETRIES"),
+        "rate_limit_retries": _parse_nonnegative_int(values.get("GEMINI_RATE_LIMIT_RETRIES", "2"), "GEMINI_RATE_LIMIT_RETRIES"),
+        "transient_retries": _parse_nonnegative_int(values.get("GEMINI_TRANSIENT_RETRIES", "2"), "GEMINI_TRANSIENT_RETRIES"),
+        "backoff_base": _parse_positive_float(values.get("GEMINI_BACKOFF_BASE_SECONDS", "2"), "GEMINI_BACKOFF_BASE_SECONDS"),
+        "backoff_max": _parse_positive_float(values.get("GEMINI_BACKOFF_MAX_SECONDS", "30"), "GEMINI_BACKOFF_MAX_SECONDS"),
+        "rate_limit_cooldown": _parse_positive_float(values.get("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", "300"), "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS"),
+        "rate_limit_cooldown_max": _parse_positive_float(values.get("GEMINI_RATE_LIMIT_COOLDOWN_MAX_SECONDS", "3600"), "GEMINI_RATE_LIMIT_COOLDOWN_MAX_SECONDS"),
+    }
+    if result["backoff_max"] < result["backoff_base"]:
+        raise ValueError("GEMINI_BACKOFF_MAX_SECONDS must be at least base")
+    if result["rate_limit_cooldown_max"] < result["rate_limit_cooldown"]:
+        raise ValueError("GEMINI_RATE_LIMIT_COOLDOWN_MAX_SECONDS must be at least cooldown")
+    return result
 
 def _parse_positive_int(value: str, name: str) -> int:
     try:
@@ -67,7 +96,7 @@ def _parse_nonnegative_int(value: str, name: str) -> int:
 def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[str, object]:
     """Validate boundary configuration before starting a long-lived process."""
     values = os.environ if environ is None else environ
-    required = ("VK_TOKEN", "VK_GROUP_ID", "MISTRAL_API_KEY")
+    required = ("VK_TOKEN", "VK_GROUP_ID", "GEMINI_API_KEY")
     missing = [name for name in required if not values.get(name, "").strip()]
     if missing:
         raise ValueError("required environment variables are missing: " + ", ".join(missing))
@@ -76,23 +105,28 @@ def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[st
     if group_id.lower().startswith("club"):
         raise ValueError("VK_GROUP_ID must be numeric without the 'club' prefix")
     parsed_group_id = _parse_positive_int(group_id, "VK_GROUP_ID")
-    mode = values.get("CONTENT_MODE", "legacy").strip().lower()
+    mode = values.get("CONTENT_MODE", "cards").strip().lower()
     if mode not in {"legacy", "cards"}:
         raise ValueError("CONTENT_MODE must be either 'legacy' or 'cards'")
     timezone_name = values.get("BOT_TIMEZONE", DEFAULT_BOT_TIMEZONE).strip()
     timezone_for(timezone_name)
 
     slot_times = tuple(item.strip() for item in values.get("SLOT_TIMES", DEFAULT_SLOT_TIMES).split(",") if item.strip())
-    if len(slot_times) != 7:
-        raise ValueError("SLOT_TIMES must contain exactly seven times")
+    expected_slot_times = tuple(local_time for _key, local_time, _requirements, _strict in SLOT_DEFINITIONS)
+    if len(slot_times) != len(SLOT_DEFINITIONS):
+        raise ValueError(f"SLOT_TIMES must contain exactly {len(SLOT_DEFINITIONS)} times")
+    if len(set(slot_times)) != len(slot_times):
+        raise ValueError("SLOT_TIMES must not contain duplicates")
     for item in slot_times:
         try:
             datetime.strptime(item, "%H:%M")
         except ValueError as exc:
             raise ValueError(f"invalid slot time: {item!r}") from exc
+    if slot_times != expected_slot_times:
+        raise ValueError("SLOT_TIMES must match the ordered slot definitions")
 
-    max_catchup = _parse_positive_int(values.get("MAX_CATCHUP_SLOTS", "7"), "MAX_CATCHUP_SLOTS")
     poll_seconds = _parse_positive_int(values.get("SCHEDULE_POLL_SECONDS", "20"), "SCHEDULE_POLL_SECONDS")
+    slot_grace_seconds = _parse_positive_int(values.get("SLOT_GRACE_SECONDS", "300"), "SLOT_GRACE_SECONDS")
     max_holidays = _parse_nonnegative_int(values.get("MAX_HOLIDAYS", "3"), "MAX_HOLIDAYS")
     post_hour = _parse_nonnegative_int(values.get("POST_HOUR", "9"), "POST_HOUR")
     post_minute = _parse_nonnegative_int(values.get("POST_MINUTE", "0"), "POST_MINUTE")
@@ -100,7 +134,7 @@ def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[st
         raise ValueError("POST_HOUR must be 0..23 and POST_MINUTE must be 0..59")
     image_provider = values.get("IMAGE_PROVIDER", "none").strip().lower()
     if image_provider not in IMAGE_PROVIDERS:
-        raise ValueError("IMAGE_PROVIDER must be either 'none' or 'pollinations'")
+        raise ValueError("IMAGE_PROVIDER must be 'none', 'pollinations', or 'cloudflare'")
     image_timeout = _parse_positive_int(values.get("IMAGE_TIMEOUT_SECONDS", str(DEFAULT_IMAGE_TIMEOUT)), "IMAGE_TIMEOUT_SECONDS")
     if image_timeout > 120:
         raise ValueError("IMAGE_TIMEOUT_SECONDS must be at most 120")
@@ -112,17 +146,36 @@ def validate_runtime_config(environ: Mapping[str, str] | None = None) -> dict[st
         validate_url(image_base_url, allowed_hosts=("image.pollinations.ai",), resolve=False)
         if not image_base_url.rstrip("/").endswith("/prompt"):
             raise ValueError("IMAGE_BASE_URL must point to the Pollinations /prompt endpoint")
+    cloudflare_account_id = values.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+    cloudflare_api_token = values.get("CLOUDFLARE_API_TOKEN", "").strip()
+    cloudflare_model = values.get("CLOUDFLARE_IMAGE_MODEL", "@cf/black-forest-labs/flux-1-schnell").strip()
+    cloudflare_timeout = _parse_positive_int(values.get("CLOUDFLARE_IMAGE_TIMEOUT_SECONDS") or "60", "CLOUDFLARE_IMAGE_TIMEOUT_SECONDS")
+    if cloudflare_timeout > 120:
+        raise ValueError("CLOUDFLARE_IMAGE_TIMEOUT_SECONDS must be at most 120")
+    if image_provider == "cloudflare":
+        if not cloudflare_account_id:
+            raise ValueError("CLOUDFLARE_ACCOUNT_ID is required when IMAGE_PROVIDER=cloudflare")
+        if not cloudflare_api_token:
+            raise ValueError("CLOUDFLARE_API_TOKEN is required when IMAGE_PROVIDER=cloudflare")
+        if not re.fullmatch(r"[0-9a-fA-F]{32}", cloudflare_account_id):
+            raise ValueError("CLOUDFLARE_ACCOUNT_ID must be a 32-character hexadecimal ID")
+        if not cloudflare_model or not re.fullmatch(r"@cf/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)+", cloudflare_model):
+            raise ValueError("CLOUDFLARE_IMAGE_MODEL must be a Workers AI model ID")
     return {
         "image_provider": image_provider,
         "image_base_url": image_base_url,
         "image_model": image_model,
         "image_timeout": image_timeout,
         "image_fallback_to_text": env_bool(values.get("IMAGE_FALLBACK_TO_TEXT"), default=True),
+        "cloudflare_account_id": cloudflare_account_id,
+        "cloudflare_api_token": cloudflare_api_token,
+        "cloudflare_model": cloudflare_model,
+        "cloudflare_timeout": cloudflare_timeout,
         "vk_group_id": parsed_group_id,
         "content_mode": mode,
         "bot_timezone": timezone_name,
         "slot_times": slot_times,
-        "max_catchup_slots": max_catchup,
+        "slot_grace_seconds": slot_grace_seconds,
         "schedule_poll_seconds": poll_seconds,
         "max_holidays": max_holidays,
     }
@@ -145,15 +198,34 @@ def _generated_image(
     image_model: str,
     image_timeout: int,
     image_base_url: str,
+    cloudflare_account_id: str = "",
+    cloudflare_api_token: str = "",
+    cloudflare_model: str = "@cf/black-forest-labs/flux-1-schnell",
+    cloudflare_timeout: int = 60,
 ) -> Optional[str]:
-    if image_provider != "pollinations":
+    if image_provider == "none":
         return None
     try:
-        from .image_provider import PollinationsImageProvider
-        provider = PollinationsImageProvider(model=image_model, timeout=image_timeout, base_url=image_base_url)
-        return provider.generate(prompt, downloader=download_image)
+        if image_provider == "pollinations":
+            from .image_provider import PollinationsImageProvider
+            provider = PollinationsImageProvider(model=image_model, timeout=image_timeout, base_url=image_base_url)
+            path = provider.generate(prompt, downloader=download_image)
+        elif image_provider == "cloudflare":
+            from .image_provider import CloudflareImageProvider
+            provider = CloudflareImageProvider(
+                account_id=cloudflare_account_id,
+                api_token=cloudflare_api_token,
+                model=cloudflare_model,
+                timeout=cloudflare_timeout,
+            )
+            path = provider.generate(prompt)
+        else:
+            raise ValueError(f"unsupported image provider: {image_provider}")
+        if path is None:
+            logger.error("Image provider %s returned no image; continuing with text-only post", image_provider)
+        return path
     except Exception as exc:  # noqa: BLE001 — image is optional
-        logger.warning("Не удалось сгенерировать картинку: %s", exc)
+        logger.error("Image generation failed for %s; continuing with text-only post: %s", image_provider, exc)
         return None
 
 
@@ -174,15 +246,28 @@ def _verified_text(card: ContentCard) -> str:
     return f"{CONTENT_LABELS[card.status]}: {claims or card.summary}\nИсточник: {card.provenance[0].get('title', '') if card.provenance else 'редакционная карточка'}"
 
 
+def _with_hashtags(text: str, tags: Iterable[str]) -> str:
+    hashtags = []
+    seen = set()
+    for tag in tags:
+        if not isinstance(tag, str) or "." not in tag:
+            continue
+        normalized = re.sub(r"[^0-9A-Za-zА-Яа-яЁё_]", "_", tag.replace(".", "_" )).strip("_")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            hashtags.append("#" + normalized)
+    return text.rstrip() + ("\n\n" + " ".join(hashtags) if hashtags else "")
+
+
 def run_content_slot(
     vk_token: str,
     vk_group_id: int,
-    mistral_api_key: str,
+    gemini_api_key: str,
     local_date: str,
     slot_key: str,
     *,
     content_db: str = DEFAULT_CONTENT_DB,
-    mistral_model: str = "mistral-small-latest",
+    gemini_model: str = "gemini-3.5-flash-lite",
     with_photos: bool = False,
     recent_card_ids: Iterable[str] = (),
     image_provider: str = "none",
@@ -190,38 +275,69 @@ def run_content_slot(
     image_model: str = DEFAULT_IMAGE_MODEL,
     image_timeout: int = DEFAULT_IMAGE_TIMEOUT,
     image_fallback_to_text: bool = True,
+    cloudflare_account_id: str = "",
+    cloudflare_api_token: str = "",
+    cloudflare_model: str = "@cf/black-forest-labs/flux-1-schnell",
+    cloudflare_timeout: int = 60,
+    gemini_max_retries: int = 3,
+    gemini_rate_limit_retries: int = 2,
+    gemini_transient_retries: int = 2,
+    gemini_backoff_base: float = 2.0,
+    gemini_backoff_max: float = 30.0,
+    gemini_rate_limit_cooldown: float = 300.0,
+    gemini_rate_limit_cooldown_max: float = 3600.0,
 ) -> int | None:
     """Generate and publish one planned editorial slot exactly once."""
-    ledger_key = None
+    plan_content_day(local_date, content_db=content_db, recent_card_ids=recent_card_ids)
     with ContentStore(content_db) as store:
-        card = store.planned_card(local_date, slot_key)
-        if card is None:
-            cards = store.list_cards(local_date[5:])
-            planned = build_plan(local_date, cards, recent_card_ids)
-            store.save_plan(local_date, planned)
-            card = store.planned_card(local_date, slot_key)
-        if card is None or not store.claim_slot(local_date, slot_key, card):
+        planned_slot = store.planned_slot(local_date, slot_key)
+        if planned_slot is None or planned_slot["state"] == "skipped":
+            return None
+        content_type = planned_slot.get("content_type", "card")
+        recipe_type = planned_slot.get("recipe_type")
+        card = store.planned_card(local_date, slot_key) if content_type == "card" else None
+        if content_type == "card" and card is None:
+            return None
+        if content_type == "recipe" and recipe_type not in RECIPE_TYPES:
+            raise ContentError("planned recipe slot has no valid recipe_type")
+        if content_type not in {"card", "recipe"}:
+            raise ContentError(f"unsupported content type: {content_type}")
+        if not store.claim_slot(local_date, slot_key, card, recipe_type=recipe_type if content_type == "recipe" else None):
             return None
         ledger = store.get_publication(local_date, slot_key)
         ledger_key = ledger["idempotency_key"] if ledger else None
     photo_path = None
     try:
-        generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
-        if card.status == "verified":
-            text = _verified_text(card)
+        generator = AIGenerator(api_key=gemini_api_key, model=gemini_model, **gemini_runtime_options(os.environ))
+        if content_type == "recipe":
+            recipe_text = generator.generate_recipe(recipe_type)
+            text = _with_hashtags(
+                recipe_text,
+                ("drink.cocktail", "format.recipe", "tone.ironic" if recipe_type == "joke" else "tone.classic"),
+            )
         else:
-            generated = generator.generate_for_content(card.packet())
-            text = f"{generated.label}: {generated.body}"
+            if card.status == "verified":
+                card_text = _verified_text(card)
+            else:
+                generated = generator.generate_for_content(card.packet())
+                card_text = f"{generated.label}: {generated.body}"
+            text = _with_hashtags(card_text, card.tags)
         if with_photos:
-            if card.image_url:
+            if card and card.image_url:
                 # Картинки карточек задаёт редактор, поэтому без allowlist хостов;
                 # остальные SSRF-проверки сохраняются.
                 photo_path = download_image(card.image_url, allowed_hosts=())
             else:
+                image_title = card.title if card else "Коктейльный рецепт"
+                image_tags = card.tags if card else ("drink.cocktail", "format.recipe")
                 photo_path = _generated_image(
-                    _image_prompt(card.title, card.summary, tags=card.tags),
+                    _image_prompt(image_title, text, tags=image_tags),
                     image_provider=image_provider, image_model=image_model,
                     image_timeout=image_timeout, image_base_url=image_base_url,
+                    cloudflare_account_id=cloudflare_account_id,
+                    cloudflare_api_token=cloudflare_api_token,
+                    cloudflare_model=cloudflare_model,
+                    cloudflare_timeout=cloudflare_timeout,
                 )
         publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
         post_id = _post_text_with_photo_fallback(publisher, text, photo_path)
@@ -233,6 +349,10 @@ def run_content_slot(
             store.mark_unknown(local_date, slot_key, str(exc), expected_idempotency_key=ledger_key)
         logger.error("Не удалось определить результат публикации слота %s: %s", slot_key, exc)
         return None
+    except AIRateLimitError as exc:
+        with ContentStore(content_db) as store:
+            store.mark_failed(local_date, slot_key, str(exc), expected_idempotency_key=ledger_key)
+        raise
     except (AIError, VKError, OSError, ContentError) as exc:
         with ContentStore(content_db) as store:
             store.mark_failed(local_date, slot_key, str(exc), expected_idempotency_key=ledger_key)
@@ -253,14 +373,53 @@ def plan_content_day(
     content_db: str = DEFAULT_CONTENT_DB,
     recent_card_ids: Iterable[str] = (),
 ) -> list[dict[str, object]]:
-    """Create or refresh the seven-slot plan for a local calendar date."""
+    """Create or refresh the six-slot plan, preserving completed slot targets."""
     with ContentStore(content_db) as store:
         existing = store.get_plan(local_date)
-        if existing and existing[0]["plan_version"] == PLAN_VERSION:
+        expected_keys = {key for key, _time, _requirements, _strict in SLOT_DEFINITIONS}
+        existing_keys = {str(row["slot_key"]) for row in existing}
+        drink_row = next((row for row in existing if row["slot_key"] == "drink"), None)
+        saved_recipe_type = drink_row.get("recipe_type") if drink_row and drink_row.get("content_type") == "recipe" else None
+        current = (
+            len(existing) == len(SLOT_DEFINITIONS)
+            and existing_keys == expected_keys
+            and all(row["plan_version"] == PLAN_VERSION for row in existing)
+            and saved_recipe_type in RECIPE_TYPES
+        )
+        if current:
             return existing
-        # Устаревшая версия плана (старая сетка слотов) — перегенерируем
-        planned = build_plan(local_date, store.list_cards(local_date[5:]), recent_card_ids)
-        store.save_plan(local_date, planned)
+
+        recipe_type = saved_recipe_type if saved_recipe_type in RECIPE_TYPES else random.choice(sorted(RECIPE_TYPES))
+        planned = build_plan(
+            local_date,
+            store.list_cards(local_date[5:]),
+            recent_card_ids,
+            recipe_type=recipe_type,
+        )
+        restored: list[PlannedSlot] = []
+        for slot in planned:
+            ledger = store.get_publication(local_date, slot.slot_key)
+            if ledger and ledger["state"] in {"published", "unknown", "publishing"}:
+                if ledger["card_id"] == RECIPE_LEDGER_CARD_ID:
+                    previous = next((row for row in existing if row["slot_key"] == slot.slot_key), {})
+                    previous_type = previous.get("recipe_type")
+                    restored.append(PlannedSlot(
+                        slot.local_date, slot.slot_key, slot.local_time, None, slot.score,
+                        slot.reason, slot.state, "recipe", previous_type if previous_type in RECIPE_TYPES else recipe_type,
+                    ))
+                    continue
+                try:
+                    card = store.get_card(ledger["card_id"], ledger["revision"])
+                except ContentError:
+                    card = None
+                if card is not None:
+                    restored.append(PlannedSlot(
+                        slot.local_date, slot.slot_key, slot.local_time, card.card_id, slot.score,
+                        "preserved completed publication", slot.state, "card", None,
+                    ))
+                    continue
+            restored.append(slot)
+        store.save_plan(local_date, restored)
         return store.get_plan(local_date)
 
 
@@ -444,9 +603,9 @@ def download_image(
 def run_daily(
     vk_token: str,
     vk_group_id: int,
-    mistral_api_key: str,
+    gemini_api_key: str,
     max_holidays: int = 3,
-    mistral_model: str = "mistral-small-latest",
+    gemini_model: str = "gemini-3.5-flash-lite",
     with_photos: bool = False,
     registry_path: str | None = None,
     registry_mode: str = "auto",
@@ -456,9 +615,13 @@ def run_daily(
     image_model: str = DEFAULT_IMAGE_MODEL,
     image_timeout: int = DEFAULT_IMAGE_TIMEOUT,
     image_fallback_to_text: bool = True,
+    cloudflare_account_id: str = "",
+    cloudflare_api_token: str = "",
+    cloudflare_model: str = "@cf/black-forest-labs/flux-1-schnell",
+    cloudflare_timeout: int = 60,
 ) -> List[int]:
     """Основной цикл: собрать праздники, сгенерировать и опубликовать посты."""
-    generator = AIGenerator(api_key=mistral_api_key, model=mistral_model)
+    generator = AIGenerator(api_key=gemini_api_key, model=gemini_model, **gemini_runtime_options(os.environ))
     publisher = VKPublisher(token=vk_token, group_id=vk_group_id)
 
     today = today_str(timezone_name)
@@ -483,12 +646,18 @@ def run_daily(
                     photo_path = download_image(item.image_url)
                 else:
                     photo_path = _generated_image(
-                        _image_prompt(item.title, item.description),
+                        _image_prompt(item.title, text),
                         image_provider=image_provider, image_model=image_model,
                         image_timeout=image_timeout, image_base_url=image_base_url,
+                        cloudflare_account_id=cloudflare_account_id,
+                        cloudflare_api_token=cloudflare_api_token,
+                        cloudflare_model=cloudflare_model,
+                        cloudflare_timeout=cloudflare_timeout,
                     )
             post_id = _post_text_with_photo_fallback(publisher, text, photo_path)
             post_ids.append(post_id)
+        except AIRateLimitError:
+            raise
         except (AIError, VKError) as exc:
             logger.error("Не удалось опубликовать «%s»: %s", item.title, exc)
             continue
@@ -509,7 +678,7 @@ def main() -> int:
     setup_logging(os.getenv("LOG_LEVEL", "INFO"))
 
     vk_token = os.getenv("VK_TOKEN", "")
-    mistral_api_key = os.getenv("MISTRAL_API_KEY", "")
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "")
 
     try:
         runtime = validate_runtime_config()
@@ -520,7 +689,7 @@ def main() -> int:
         logger.error("Ошибка конфигурации: %s", exc)
         return 1
 
-    mistral_model = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
     with_photos = env_bool(os.getenv("WITH_PHOTOS"))
     registry_path = os.getenv("SOURCE_REGISTRY_DB", DEFAULT_DB_PATH)
     registry_mode = os.getenv("SOURCE_REGISTRY_MODE", "auto").strip().lower()
@@ -529,9 +698,9 @@ def main() -> int:
         run_daily(
             vk_token=vk_token,
             vk_group_id=parsed_group_id,
-            mistral_api_key=mistral_api_key,
+            gemini_api_key=gemini_api_key,
             max_holidays=max_holidays,
-            mistral_model=mistral_model,
+            gemini_model=gemini_model,
             with_photos=with_photos,
             registry_path=registry_path,
             registry_mode=registry_mode,
@@ -541,8 +710,12 @@ def main() -> int:
             image_model=str(runtime["image_model"]),
             image_timeout=int(runtime["image_timeout"]),
             image_fallback_to_text=bool(runtime["image_fallback_to_text"]),
+            cloudflare_account_id=str(runtime["cloudflare_account_id"]),
+            cloudflare_api_token=str(runtime["cloudflare_api_token"]),
+            cloudflare_model=str(runtime["cloudflare_model"]),
+            cloudflare_timeout=int(runtime["cloudflare_timeout"]),
         )
-    except (AIError, VKError, SourceError, OSError) as exc:
+    except (AIRateLimitError, AIError, VKError, SourceError, OSError) as exc:
         logger.error("Ошибка выполнения: %s", exc)
         return 1
 

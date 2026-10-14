@@ -5,7 +5,9 @@ import hashlib
 import json
 import sqlite3
 import time
+import uuid
 from datetime import datetime
+from urllib.parse import urlsplit, urlunsplit
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -18,17 +20,18 @@ TRUSTED_SOURCE_TYPES = frozenset({"academic", "primary"})
 # (slot_key, local_time, requirements, strict): strict-слоты не имеют
 # запасного пула — факт не выйдет вечером, миф не выйдет утром.
 SLOT_DEFINITIONS = (
-    ("fact", "09:00", ("status.verified",), True),
-    ("drink", "10:30", ("drink.beer", "drink.wine", "drink.vodka", "topic.production"), False),
-    ("context", "12:00", ("topic.context", "topic.history", "topic.people", "topic.places"), False),
-    ("custom_law", "13:30", ("topic.customs", "topic.law", "topic.regulation"), False),
-    ("trade", "15:00", ("topic.trade", "topic.production"), False),
-    ("myth", "17:00", ("format.myth", "status.unverified", "status.rejected"), True),
-    ("analysis", "19:00", ("format.analysis", "status.disputed", "status.refuted"), True),
+    ("fact", "12:00", ("status.verified",), True),
+    ("drink", "14:00", ("drink.cocktail",), False),
+    ("context", "16:00", ("topic.context", "topic.history", "topic.people", "topic.places", "topic.trade", "topic.production"), False),
+    ("custom_law", "18:00", ("topic.customs", "topic.law", "topic.regulation"), False),
+    ("myth", "20:00", ("format.myth", "status.unverified", "status.rejected"), False),
+    ("analysis", "22:00", ("format.analysis", "status.disputed", "status.refuted"), False),
 )
 TAG_GROUPS = {"era", "drink", "geo", "topic", "format", "tone", "status"}
 ANY_DAY = "00-00"
-PLAN_VERSION = 2
+PLAN_VERSION = 3
+RECIPE_LEDGER_CARD_ID = "__recipe__"
+RECIPE_TYPES = frozenset({"joke", "classic"})
 
 
 def _now() -> str:
@@ -76,7 +79,7 @@ class ContentCard:
         return self.editorial_label or LABELS[self.status]
 
     @property
-    def requires_mistral(self) -> bool:
+    def requires_ai(self) -> bool:
         return self.status != "verified"
 
     def packet(self) -> dict[str, Any]:
@@ -120,7 +123,7 @@ class ContentStore:
         CREATE TABLE IF NOT EXISTS content_claims(claim_id TEXT PRIMARY KEY, card_id TEXT NOT NULL, revision INTEGER NOT NULL, ordinal INTEGER NOT NULL, claim_text TEXT NOT NULL, provenance_id TEXT NOT NULL DEFAULT '', FOREIGN KEY(card_id,revision) REFERENCES content_cards(card_id,revision) ON DELETE CASCADE);
         CREATE TABLE IF NOT EXISTS provenance_sources(provenance_id TEXT PRIMARY KEY, source_type TEXT NOT NULL, title TEXT NOT NULL, author TEXT NOT NULL DEFAULT '', publication_year INTEGER, url TEXT NOT NULL DEFAULT '', locator TEXT NOT NULL DEFAULT '', quote TEXT NOT NULL DEFAULT '', source_hash TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS slot_definitions(slot_key TEXT PRIMARY KEY, ordinal INTEGER UNIQUE NOT NULL, local_time TEXT NOT NULL, requirements_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1);
-        CREATE TABLE IF NOT EXISTS publication_plan(local_date TEXT NOT NULL, slot_key TEXT NOT NULL, card_id TEXT, revision INTEGER, score REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'planned', plan_version INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(local_date,slot_key));
+        CREATE TABLE IF NOT EXISTS publication_plan(local_date TEXT NOT NULL, slot_key TEXT NOT NULL, card_id TEXT, revision INTEGER, score REAL NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT 'planned', plan_version INTEGER NOT NULL DEFAULT 1, content_type TEXT NOT NULL DEFAULT 'card', recipe_type TEXT, PRIMARY KEY(local_date,slot_key));
         CREATE TABLE IF NOT EXISTS publication_ledger(idempotency_key TEXT PRIMARY KEY, local_date TEXT NOT NULL, slot_key TEXT NOT NULL, card_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, vk_post_id INTEGER, generated_text TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(local_date,slot_key));
         CREATE INDEX IF NOT EXISTS idx_cards_day ON content_cards(calendar_day,active,status);
         CREATE INDEX IF NOT EXISTS idx_ledger_card ON publication_ledger(card_id,local_date);
@@ -139,6 +142,199 @@ class ContentStore:
         self.conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(2,?)", (_now(),))
         # v3: новая сетка слотов (fact/контекст, strict-слоты) — сид выше уже синхронизирован
         self.conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(3,?)", (_now(),))
+        # v4: append-only publication history shared by cards and legacy flows.
+        self.conn.executescript("""
+        CREATE TABLE IF NOT EXISTS publication_targets(
+            target_key TEXT PRIMARY KEY,
+            identity_json TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            local_date TEXT NOT NULL,
+            slot_key TEXT,
+            card_id TEXT,
+            revision INTEGER,
+            state TEXT NOT NULL CHECK(state IN ('publishing','published','failed','unknown')),
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            latest_attempt_id TEXT,
+            vk_post_id INTEGER,
+            generated_text TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS publication_attempts(
+            attempt_id TEXT PRIMARY KEY,
+            target_key TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            attempt_no INTEGER NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('publishing','published','failed','unknown')),
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            vk_post_id INTEGER,
+            generated_text TEXT,
+            error TEXT,
+            FOREIGN KEY(target_key) REFERENCES publication_targets(target_key)
+        );
+        CREATE TABLE IF NOT EXISTS publication_events(
+            event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_key TEXT NOT NULL,
+            attempt_id TEXT,
+            event_type TEXT NOT NULL,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(target_key) REFERENCES publication_targets(target_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_publication_targets_date ON publication_targets(local_date,state);
+        CREATE INDEX IF NOT EXISTS idx_publication_attempts_target ON publication_attempts(target_key,attempt_no);
+        CREATE INDEX IF NOT EXISTS idx_publication_events_target ON publication_events(target_key,event_id);
+        """)
+        v4_done = self.conn.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone() is not None
+        if not v4_done:
+            # Backfill the old cards ledger without fabricating a retryable state.
+            for old in self.conn.execute("SELECT * FROM publication_ledger").fetchall():
+                identity = {"channel": "vk", "mode": "cards", "local_date": old["local_date"], "slot_key": old["slot_key"]}
+                target_key = self.target_key(identity)
+                state = "unknown" if old["state"] == "publishing" else old["state"]
+                self.conn.execute("INSERT OR IGNORE INTO publication_targets(target_key,identity_json,mode,local_date,slot_key,card_id,revision,state,attempt_count,vk_post_id,generated_text,error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (target_key,json.dumps(identity,ensure_ascii=False,sort_keys=True),"cards",old["local_date"],old["slot_key"],old["card_id"],old["revision"],state,old["attempts"],old["vk_post_id"],old["generated_text"],old["error"],old["created_at"],old["updated_at"]))
+                attempt_id = "legacy-" + old["idempotency_key"]
+                self.conn.execute("INSERT OR IGNORE INTO publication_attempts(attempt_id,target_key,run_id,attempt_no,state,started_at,finished_at,vk_post_id,generated_text,error) VALUES(?,?,?,?,?,?,?,?,?,?)", (attempt_id,target_key,"migration-v4",max(1,old["attempts"]),state,old["created_at"],old["updated_at"],old["vk_post_id"],old["generated_text"],old["error"]))
+                self.conn.execute("UPDATE publication_targets SET latest_attempt_id=? WHERE target_key=? AND latest_attempt_id IS NULL", (attempt_id,target_key))
+                self._event(target_key,attempt_id,"migration",{"from":"publication_ledger","state":old["state"]})
+            self.conn.execute("INSERT INTO schema_migrations(version,applied_at) VALUES(4,?)", (_now(),))
+        plan_columns = {row["name"] for row in self.conn.execute("PRAGMA table_info(publication_plan)")}
+        if "content_type" not in plan_columns:
+            self.conn.execute("ALTER TABLE publication_plan ADD COLUMN content_type TEXT NOT NULL DEFAULT 'card'")
+        if "recipe_type" not in plan_columns:
+            self.conn.execute("ALTER TABLE publication_plan ADD COLUMN recipe_type TEXT")
+        self.conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(5,?)", (_now(),))
+        self.conn.execute("""CREATE TABLE IF NOT EXISTS test_drafts(
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            text TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status='draft'),
+            notification_state TEXT NOT NULL CHECK(notification_state IN ('pending','sent','failed')),
+            notification_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        self.conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(6,?)", (_now(),))
+
+    @staticmethod
+    def _target_key(identity: Mapping[str, Any]) -> str:
+        encoded = json.dumps(dict(identity), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+    @classmethod
+    def target_key(cls, identity: Mapping[str, Any]) -> str:
+        """Return the stable key for one logical publication target."""
+        if not identity or not identity.get("channel") or not identity.get("mode"):
+            raise ContentError("publication identity needs channel and mode")
+        return cls._target_key(identity)
+
+    def claim_publication(self, identity: Mapping[str, Any], *, run_id: str | None = None, snapshot: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Atomically reserve a target and append an immutable attempt."""
+        target_key = self.target_key(identity)
+        identity_data = dict(identity)
+        mode = str(identity_data["mode"])
+        local_date = str(identity_data.get("local_date") or identity_data.get("event_date") or "")
+        now = _now(); run_id = run_id or str(uuid.uuid4())
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.execute("""INSERT OR IGNORE INTO publication_targets
+                (target_key,identity_json,mode,local_date,slot_key,card_id,revision,state,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""", (target_key, json.dumps(identity_data, ensure_ascii=False, sort_keys=True), mode, local_date, identity_data.get("slot_key"), identity_data.get("card_id"), identity_data.get("revision"), "failed", now, now))
+            target = self.conn.execute("SELECT state,attempt_count FROM publication_targets WHERE target_key=?", (target_key,)).fetchone()
+            if target["state"] in {"published", "unknown", "publishing"}:
+                self.conn.execute("COMMIT"); return None
+            attempt_no = int(target["attempt_count"]) + 1
+            attempt_id = str(uuid.uuid4())
+            self.conn.execute("INSERT INTO publication_attempts(attempt_id,target_key,run_id,attempt_no,state,started_at) VALUES(?,?,?,?,?,?)", (attempt_id,target_key,run_id,attempt_no,"publishing",now))
+            snap = dict(snapshot or {})
+            self.conn.execute("UPDATE publication_targets SET state='publishing',attempt_count=?,latest_attempt_id=?,card_id=COALESCE(?,card_id),revision=COALESCE(?,revision),updated_at=? WHERE target_key=?", (attempt_no,attempt_id,snap.get("card_id"),snap.get("revision"),now,target_key))
+            self._event(target_key, attempt_id, "claim", {"run_id": run_id, "snapshot": snap})
+            self.conn.execute("COMMIT")
+            return {"target_key": target_key, "attempt_id": attempt_id, "attempt_no": attempt_no, "run_id": run_id, "identity": identity_data}
+        except Exception:
+            self.conn.execute("ROLLBACK"); raise
+
+    def _event(self, target_key: str, attempt_id: str | None, event_type: str, metadata: Mapping[str, Any] | None = None) -> None:
+        self.conn.execute("INSERT INTO publication_events(target_key,attempt_id,event_type,metadata_json,created_at) VALUES(?,?,?,?,?)", (target_key,attempt_id,event_type,json.dumps(dict(metadata or {}), ensure_ascii=False, sort_keys=True),_now()))
+
+    def finish_publication(self, attempt_id: str, state: str, *, post_id: int | None = None, text: str | None = None, error: str = "") -> bool:
+        """Finish an attempt with a fenced compare-and-set transition."""
+        _validate_publication_state(state)
+        if state == "published": _validate_post_id(post_id)
+        elif post_id is not None: raise ContentError("only published records may have a VK post id")
+        now = _now(); self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.conn.execute("SELECT * FROM publication_attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+            if row is None or row["state"] != "publishing":
+                self.conn.execute("ROLLBACK"); return False
+            changed = self.conn.execute("UPDATE publication_attempts SET state=?,finished_at=?,vk_post_id=?,generated_text=?,error=? WHERE attempt_id=? AND state='publishing'", (state,now,post_id,text,error[:1000],attempt_id)).rowcount
+            if changed != 1:
+                self.conn.execute("ROLLBACK"); return False
+            self.conn.execute("UPDATE publication_targets SET state=?,vk_post_id=?,generated_text=?,error=?,updated_at=? WHERE target_key=? AND latest_attempt_id=?", (state,post_id,text,error[:1000],now,row["target_key"],attempt_id))
+            self._event(row["target_key"],attempt_id,state,{"post_id":post_id,"error":error[:1000]})
+            self.conn.execute("COMMIT"); return True
+        except Exception:
+            self.conn.execute("ROLLBACK"); raise
+
+    def reconcile_publication(self, target_key: str, state: str, *, post_id: int | None = None, error: str = "") -> bool:
+        if state not in {"published", "failed"}:
+            raise ContentError("reconciliation state must be published or failed")
+        if state == "published":
+            _validate_post_id(post_id)
+        row = self.conn.execute("SELECT * FROM publication_targets WHERE target_key=?", (target_key,)).fetchone()
+        if row is None or row["state"] != "unknown":
+            return False
+        now = _now()
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            updated = self.conn.execute("UPDATE publication_targets SET state=?,vk_post_id=?,error=?,updated_at=? WHERE target_key=? AND state='unknown'", (state, post_id, error[:1000], now, target_key)).rowcount
+            if updated != 1:
+                self.conn.execute("ROLLBACK")
+                return False
+            attempt_id = row["latest_attempt_id"]
+            if attempt_id:
+                self.conn.execute("UPDATE publication_attempts SET state=?,finished_at=?,vk_post_id=?,error=? WHERE attempt_id=? AND state='publishing'", (state, now, post_id, error[:1000], attempt_id))
+            self._event(target_key, attempt_id, "reconcile", {"state": state, "post_id": post_id, "error": error[:1000]})
+            self.conn.execute("COMMIT")
+            return True
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
+
+    def publication_targets(self, *, local_date: str | None = None, state: str | None = None, mode: str | None = None) -> list[dict[str, Any]]:
+        query, args = "SELECT * FROM publication_targets", []
+        filters = []
+        if local_date:
+            filters.append("local_date=?"); args.append(local_date)
+        if state:
+            filters.append("state=?"); args.append(state)
+        if mode:
+            filters.append("mode=?"); args.append(mode)
+        if filters:
+            query += " WHERE " + " AND ".join(filters)
+        return [dict(row) for row in self.conn.execute(query + " ORDER BY local_date,target_key", args)]
+
+    def publication_attempts(self, target_key: str) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute("SELECT * FROM publication_attempts WHERE target_key=? ORDER BY attempt_no", (target_key,))]
+
+    def publication_events(self, target_key: str) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute("SELECT * FROM publication_events WHERE target_key=? ORDER BY event_id", (target_key,))]
+
+    def mark_publications_stale(self, older_than_seconds: int | float, *, error: str = "publishing attempt became stale; VK outcome requires reconciliation") -> list[dict[str, Any]]:
+        if older_than_seconds < 0: raise ContentError("older_than_seconds must be non-negative")
+        cutoff = time.time() - float(older_than_seconds); changed = []
+        for row in self.conn.execute("SELECT * FROM publication_targets WHERE state='publishing' ORDER BY updated_at").fetchall():
+            try: stale = _timestamp(row["updated_at"]) <= cutoff
+            except (TypeError, ValueError): stale = True
+            if stale:
+                attempt = row["latest_attempt_id"]
+                if attempt and self.finish_publication(attempt, "unknown", error=error): changed.append(self._target_row(row["target_key"]))
+        return [item for item in changed if item]
+
+    def _target_row(self, target_key: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM publication_targets WHERE target_key=?", (target_key,)).fetchone()
+        return dict(row) if row else None
 
     @staticmethod
     def _validate(data: Mapping[str, Any]) -> None:
@@ -229,22 +425,74 @@ class ContentStore:
     def slots(self) -> list[dict[str, Any]]:
         return [dict(row) for row in self.conn.execute("SELECT * FROM slot_definitions WHERE enabled=1 ORDER BY ordinal")]
 
+    def create_or_get_test_draft(
+        self,
+        text: str,
+        *,
+        notification_state: str = "pending",
+        notification_error: str = "",
+    ) -> dict[str, Any]:
+        """Persist one non-publishing test draft without a publication date."""
+        if not isinstance(text, str) or not text.strip():
+            raise ContentError("draft text must not be empty")
+        if notification_state not in {"pending", "sent", "failed"}:
+            raise ContentError("unsupported draft notification state")
+        now = _now()
+        self.conn.execute(
+            "INSERT OR IGNORE INTO test_drafts(id,text,status,notification_state,notification_error,created_at,updated_at) "
+            "VALUES(1,?,'draft',?,?,?,?)",
+            (text.strip(), notification_state, notification_error[:1000], now, now),
+        )
+        return self.get_test_draft()
+
+    def get_test_draft(self) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM test_drafts WHERE id=1").fetchone()
+        if row is None:
+            raise ContentError("test draft not found")
+        return dict(row)
+
+    def set_test_draft_notification(self, state: str, error: str = "") -> dict[str, Any]:
+        if state not in {"pending", "sent", "failed"}:
+            raise ContentError("unsupported draft notification state")
+        self.conn.execute(
+            "UPDATE test_drafts SET notification_state=?,notification_error=?,updated_at=? WHERE id=1",
+            (state, error[:1000], _now()),
+        )
+        return self.get_test_draft()
+
     @staticmethod
     def idempotency_key(local_date: str, slot_key: str, card: ContentCard) -> str:
         return hashlib.sha256(f"{local_date}|{slot_key}|{card.card_id}|{card.revision}|{card.content_hash}".encode()).hexdigest()
 
     def save_plan(self, local_date: str, planned: Iterable[Any], plan_version: int = PLAN_VERSION) -> None:
+        slots = list(planned)
         self.conn.execute("BEGIN IMMEDIATE")
         try:
-            for slot in planned:
-                revision = self.get_card(slot.card_id).revision if slot.card_id else None
-                self.conn.execute("INSERT OR REPLACE INTO publication_plan VALUES(?,?,?,?,?,?,?,?)", (local_date,slot.slot_key,slot.card_id,revision,slot.score,slot.reason,slot.state,plan_version))
+            keys = [slot.slot_key for slot in slots]
+            if keys:
+                placeholders = ",".join("?" for _ in keys)
+                self.conn.execute(f"DELETE FROM publication_plan WHERE local_date=? AND slot_key NOT IN ({placeholders})", (local_date, *keys))
+            else:
+                self.conn.execute("DELETE FROM publication_plan WHERE local_date=?", (local_date,))
+            for slot in slots:
+                revision = self.get_card(slot.card_id).revision if slot.card_id and slot.content_type == "card" else (1 if slot.content_type == "recipe" else None)
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO publication_plan(local_date,slot_key,card_id,revision,score,reason,state,plan_version,content_type,recipe_type) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (local_date,slot.slot_key,slot.card_id,revision,slot.score,slot.reason,slot.state,plan_version,slot.content_type,slot.recipe_type),
+                )
             self.conn.execute("COMMIT")
         except Exception:
             self.conn.execute("ROLLBACK"); raise
 
     def get_plan(self, local_date: str) -> list[dict[str, Any]]:
         return [dict(row) for row in self.conn.execute("SELECT * FROM publication_plan WHERE local_date=? ORDER BY slot_key", (local_date,)).fetchall()]
+
+    def planned_slot(self, local_date: str, slot_key: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM publication_plan WHERE local_date=? AND slot_key=?",
+            (local_date, slot_key),
+        ).fetchone()
+        return dict(row) if row is not None else None
 
     def planned_card(self, local_date: str, slot_key: str) -> ContentCard | None:
         """Return the card planned for a slot, or None for empty/skipped slots."""
@@ -293,8 +541,17 @@ class ContentStore:
 
     list_stale_publications = list_stale_publishing
 
-    def claim_slot(self, local_date: str, slot_key: str, card: ContentCard) -> bool:
-        key = self.idempotency_key(local_date, slot_key, card)
+    def claim_slot(self, local_date: str, slot_key: str, card: ContentCard | None, *, recipe_type: str | None = None) -> bool:
+        if card is None:
+            if recipe_type not in RECIPE_TYPES:
+                raise ContentError("recipe slots need recipe_type joke/classic")
+            card_id, revision = RECIPE_LEDGER_CARD_ID, 1
+            key = hashlib.sha256(f"{local_date}|{slot_key}|recipe|{recipe_type}".encode()).hexdigest()
+        else:
+            if recipe_type is not None:
+                raise ContentError("card slots must not carry a recipe_type")
+            card_id, revision = card.card_id, card.revision
+            key = self.idempotency_key(local_date, slot_key, card)
         now = _now()
         self.conn.execute("BEGIN IMMEDIATE")
         try:
@@ -302,7 +559,15 @@ class ContentStore:
             if row and row["state"] in {"published", "unknown", "publishing"}:
                 self.conn.execute("COMMIT")
                 return False
-            self.conn.execute("INSERT OR REPLACE INTO publication_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (key, local_date, slot_key, card.card_id, card.revision, "publishing", (row["attempts"] + 1 if row else 1), None, None, None, now, now))
+            attempts = row["attempts"] + 1 if row else 1
+            self.conn.execute("INSERT OR REPLACE INTO publication_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", (key, local_date, slot_key, card_id, revision, "publishing", attempts, None, None, None, now, now))
+            identity = {"channel": "vk", "mode": "cards", "local_date": local_date, "slot_key": slot_key}
+            target_key = self.target_key(identity)
+            self.conn.execute("INSERT OR IGNORE INTO publication_targets(target_key,identity_json,mode,local_date,slot_key,card_id,revision,state,attempt_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (target_key, json.dumps(identity, ensure_ascii=False, sort_keys=True), "cards", local_date, slot_key, card_id, revision, "failed", 0, now, now))
+            attempt_id = str(uuid.uuid4())
+            self.conn.execute("INSERT INTO publication_attempts(attempt_id,target_key,run_id,attempt_no,state,started_at) VALUES(?,?,?,?,?,?)", (attempt_id, target_key, "scheduler", attempts, "publishing", now))
+            self.conn.execute("UPDATE publication_targets SET state='publishing',attempt_count=?,latest_attempt_id=?,card_id=?,revision=?,updated_at=? WHERE target_key=?", (attempts, attempt_id, card_id, revision, now, target_key))
+            self._event(target_key, attempt_id, "claim", {"run_id": "scheduler", "source": "claim_slot", "recipe_type": recipe_type})
             self.conn.execute("COMMIT")
             return True
         except Exception:
@@ -319,7 +584,17 @@ class ContentStore:
         if row is None or row["state"] not in expected_states or (expected_idempotency_key and row["idempotency_key"] != expected_idempotency_key):
             return False
         updated = self.conn.execute("UPDATE publication_ledger SET state=?,vk_post_id=?,generated_text=?,error=?,updated_at=? WHERE local_date=? AND slot_key=? AND state=? AND idempotency_key=?", (state, post_id, text, error[:1000], _now(), local_date, slot_key, row["state"], row["idempotency_key"])).rowcount
-        return updated == 1
+        if updated != 1:
+            return False
+        identity = {"channel": "vk", "mode": "cards", "local_date": local_date, "slot_key": slot_key}
+        target_key = self.target_key(identity)
+        target = self.conn.execute("SELECT latest_attempt_id FROM publication_targets WHERE target_key=?", (target_key,)).fetchone()
+        if target and target["latest_attempt_id"]:
+            now = _now()
+            self.conn.execute("UPDATE publication_attempts SET state=?,finished_at=?,vk_post_id=?,generated_text=?,error=? WHERE attempt_id=? AND state='publishing'", (state, now, post_id, text, error[:1000], target["latest_attempt_id"]))
+            self.conn.execute("UPDATE publication_targets SET state=?,vk_post_id=?,generated_text=?,error=?,updated_at=? WHERE target_key=? AND latest_attempt_id=?", (state, post_id, text, error[:1000], now, target_key, target["latest_attempt_id"]))
+            self._event(target_key, target["latest_attempt_id"], state, {"post_id": post_id, "error": error[:1000]})
+        return True
 
     def mark_published(self, local_date: str, slot_key: str, post_id: int, text: str, *, expected_idempotency_key: str | None = None) -> bool:
         return self._transition(local_date, slot_key, "published", post_id=post_id, text=text, expected_idempotency_key=expected_idempotency_key)

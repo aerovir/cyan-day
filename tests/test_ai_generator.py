@@ -1,4 +1,6 @@
-"""Тесты для генератора ироничных алкогольных текстов через Mistral API."""
+"""Тесты для генератора ироничных алкогольных текстов через Gemini API."""
+import json
+
 import pytest
 
 from app.ai_generator import AIError, AIGenerator, generate_alcohol_post
@@ -18,24 +20,18 @@ class _FakeResponse:
 
 @pytest.fixture
 def generator():
-    return AIGenerator(api_key="test-key", model="mistral-small-latest")
+    return AIGenerator(api_key="test-key", model="gemini-3.5-flash-lite")
 
 
 class TestGenerateAlcoholPost:
     def test_returns_string(self, requests_mock, generator):
         """Должен вернуть строку с юмористическим текстом."""
         requests_mock.post(
-            "https://api.mistral.ai/v1/chat/completions",
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
             json={
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Сегодня день гранёного стакана — "
+                "candidates": [{"content": {"parts": [{"text": "Сегодня день гранёного стакана — "
                             "священного сосуда, который вмещает и водку, "
-                            "и надежды на завтрашнее утро!"
-                        }
-                    }
-                ]
+                            "и надежды на завтрашнее утро!"}]}}]
             },
         )
         result = generate_alcohol_post(
@@ -66,8 +62,8 @@ class TestGenerateAlcoholPost:
         mocker.patch.object(ai_generator.requests, "post", side_effect=fake_post)
 
         requests_mock.post(
-            "https://api.mistral.ai/v1/chat/completions",
-            json={"choices": [{"message": {"content": "Хороший пост"}}]},
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+            json={"candidates": [{"content": {"parts": [{"text": "Хороший пост"}]}}]},
         )
         generate_alcohol_post(
             holiday_title="День гранёного стакана",
@@ -81,7 +77,7 @@ class TestGenerateAlcoholPost:
     def test_api_error_raises_ai_error(self, requests_mock, generator):
         """Ошибка API должна поднимать AIError."""
         requests_mock.post(
-            "https://api.mistral.ai/v1/chat/completions", status=401, body='{"error":"Invalid API Key"}'
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent", status=401, body='{"error":"Invalid API Key"}'
         )
         with pytest.raises(AIError):
             generate_alcohol_post(
@@ -104,16 +100,29 @@ class TestAIGenerator:
 
     def test_default_model(self):
         g = AIGenerator(api_key="sk-test")
-        assert g.model == "mistral-small-latest"
+        assert g.model == "gemini-3.5-flash-lite"
 
     def test_generate_returns_content(self, requests_mock):
         g = AIGenerator(api_key="sk-test")
         requests_mock.post(
-            "https://api.mistral.ai/v1/chat/completions",
-            json={"choices": [{"message": {"content": "Ироничный текст"}}]},
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+            json={"candidates": [{"content": {"parts": [{"text": "Ироничный текст"}]}}]},
         )
         result = g.generate("Расскажи про праздник")
         assert result == "Ироничный текст"
+
+    def test_generate_uses_gemini_header_and_content_payload(self, requests_mock):
+        g = AIGenerator(api_key="test-key", model="models/gemini-3.5-flash-lite")
+        requests_mock.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+            json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]},
+        )
+
+        assert g.generate("prompt") == "ok"
+        request = requests_mock.calls[0].request
+        assert request.headers["x-goog-api-key"] == "test-key"
+        assert json.loads(request.body)["systemInstruction"]["parts"]
+        assert json.loads(request.body)["contents"][0]["parts"][0]["text"] == "prompt"
 
     def test_generate_retries_on_429(self, requests_mock, mocker):
         """При 429 должен быть повторный запрос."""
@@ -126,12 +135,93 @@ class TestAIGenerator:
             "post",
             side_effect=(
                 _FakeResponse(429, {}),
-                _FakeResponse(200, {"choices": [{"message": {"content": "Успех"}}]}),
+                _FakeResponse(200, {"candidates": [{"content": {"parts": [{"text": "Успех"}]}}]}),
             ),
         )
         result = g.generate("тест")
         assert result == "Успех"
         assert ai_generator.requests.post.call_count == 2
+
+
+class TestGenerateRecipe:
+    def _joke_payload(self, *, substituted_amount=45):
+        return json.dumps({
+            "recipe_type": "joke",
+            "title": "Мартини с характером",
+            "caption": "Коктейль для переговоров с понедельником.",
+            "original_ingredients": [
+                {"name": "джин", "amount": 45, "unit": "мл"},
+                {"name": "сухой вермут", "amount": 15, "unit": "мл"},
+            ],
+            "ingredients": [
+                {"name": "томатный сок", "amount": substituted_amount, "unit": "мл"},
+                {"name": "сухой вермут", "amount": 15, "unit": "мл"},
+            ],
+            "substitutions": [{"from": "джин", "to": "томатный сок"}],
+            "instructions": ["Охладить стакан и аккуратно перемешать."]
+        }, ensure_ascii=False)
+
+    def test_joke_recipe_preserves_measures_and_renders_structured_ingredients(self, mocker):
+        generator = AIGenerator(api_key="test-key")
+        mocker.patch.object(generator, "generate", return_value=self._joke_payload())
+
+        result = generator.generate_recipe("joke")
+
+        assert "Иронично" not in result
+        assert "45 мл томатный сок" in result
+        assert "15 мл сухой вермут" in result
+
+    def test_joke_recipe_retries_then_rejects_changed_proportion(self, mocker):
+        generator = AIGenerator(api_key="test-key")
+        call = mocker.patch.object(generator, "generate", side_effect=[
+            self._joke_payload(substituted_amount=60),
+            self._joke_payload(substituted_amount=60),
+        ])
+
+        with pytest.raises(AIError, match="amounts and units"):
+            generator.generate_recipe("joke")
+
+        assert call.call_count == 2
+        assert "шуточные" in call.call_args.kwargs["system_instruction"]
+
+    def test_classic_recipe_does_not_allow_substitutions(self, mocker):
+        generator = AIGenerator(api_key="test-key")
+        payload = json.dumps({
+            "recipe_type": "classic",
+            "title": "Дайкири",
+            "caption": "Классический вариант.",
+            "original_ingredients": [{"name": "ром", "amount": 60, "unit": "мл"}],
+            "ingredients": [{"name": "ром", "amount": 60, "unit": "мл"}],
+            "substitutions": [],
+            "instructions": ["Взбить со льдом и процедить."]
+        }, ensure_ascii=False)
+        call = mocker.patch.object(generator, "generate", return_value=payload)
+
+        result = generator.generate_recipe("classic")
+
+        assert "60 мл ром" in result
+        assert "стандартные пропорции" in call.call_args.args[0]
+        assert "нейтрально" in call.call_args.kwargs["system_instruction"]
+
+    def test_classic_recipe_rejects_any_substitution(self, mocker):
+        generator = AIGenerator(api_key="test-key")
+        payload = json.dumps({
+            "recipe_type": "classic",
+            "title": "Дайкири",
+            "caption": "Классический вариант.",
+            "original_ingredients": [{"name": "ром", "amount": 60, "unit": "мл"}],
+            "ingredients": [{"name": "джин", "amount": 60, "unit": "мл"}],
+            "substitutions": [{"from": "ром", "to": "джин"}],
+            "instructions": ["Взбить со льдом и процедить."]
+        }, ensure_ascii=False)
+        mocker.patch.object(generator, "generate", side_effect=[payload, payload])
+
+        with pytest.raises(AIError, match="classic recipe must not change ingredients"):
+            generator.generate_recipe("classic")
+
+    def test_invalid_recipe_type_is_rejected(self):
+        with pytest.raises(AIError, match="unsupported recipe type"):
+            AIGenerator(api_key="test-key").generate_recipe("other")
 
 
 class TestGenerateForStatus:
@@ -158,17 +248,18 @@ class TestGenerateForStatus:
             generator.generate_for_status("unverified", "Т", "О")
 
     def test_status_generation_requests_json_response_format(self, mocker, generator):
-        """Запрос к Mistral для статусной генерации должен включать response_format json_object."""
+        """Запрос к Gemini для статусной генерации должен включать response_format json_object."""
         from app import ai_generator
 
         mocker.patch.object(
             ai_generator.requests,
             "post",
-            return_value=_FakeResponse(200, {"choices": [{"message": {"content": '{"label": "МИФ", "body": "т", "claims_used": [], "unsupported_claims": [], "visual_brief": ""}'}}]}),
+            return_value=_FakeResponse(200, {"candidates": [{"content": {"parts": [{"text": '{"label": "МИФ", "body": "т", "claims_used": [], "unsupported_claims": [], "visual_brief": ""}'}]}}]}),
         )
         generator.generate_for_status("unverified", "Т", "О")
         payload = ai_generator.requests.post.call_args.kwargs["json"]
-        assert payload.get("response_format") == {"type": "json_object"}
+        assert payload["generationConfig"]["responseMimeType"] == "application/json"
+        assert "systemInstruction" in payload
 
     def test_retries_with_correction_on_wrong_label(self, mocker, generator):
         """Неверная маркировка — одна повторная попытка с уточнением, затем успех."""

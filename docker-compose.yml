@@ -37,6 +37,14 @@ services:
     profiles: ["images"]
     build:
       context: .
+    environment:
+      IMAGE_MODEL: ${IMAGE_MODEL:-flux}
+      IMAGE_BASE_URL: ${IMAGE_BASE_URL:-https://image.pollinations.ai/prompt}
+      IMAGE_TIMEOUT_SECONDS: ${IMAGE_TIMEOUT_SECONDS:-30}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_IMAGE_MODEL: ${CLOUDFLARE_IMAGE_MODEL:-@cf/black-forest-labs/flux-1-schnell}
+      CLOUDFLARE_IMAGE_TIMEOUT_SECONDS: ${CLOUDFLARE_IMAGE_TIMEOUT_SECONDS:-60}
     entrypoint: ["python", "-m", "app.image_admin"]
     restart: "no"
     init: true
