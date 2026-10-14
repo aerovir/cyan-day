@@ -96,7 +96,7 @@ class VKPublisher:
                 "message": message,
             }
             if attachment:
-                params["attachment"] = attachment
+                params["attachments"] = attachment
             response = self.api.wall.post(**params)
         except VkApiError as exc:
             raise VKError(f"Ошибка публикации в VK: {exc}") from exc

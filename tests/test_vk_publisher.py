@@ -60,7 +60,7 @@ class TestVKPublisher:
         assert post_id == 456
         upload.photo_wall.assert_called_once()
         call_kwargs = api.wall.post.call_args.kwargs
-        assert "photo-123456789_999" in call_kwargs["attachment"]
+        assert "photo-123456789_999" in call_kwargs["attachments"]
 
     def test_photo_upload_error_keeps_code_and_redacts_token(self, publisher, vk_session_mock, mocker, tmp_path):
         upload = mocker.patch("app.vk_publisher.vk_api.VkUpload").return_value
@@ -84,7 +84,7 @@ class TestVKPublisher:
 
         publisher.post(message="Текст без фото")
 
-        assert api.wall.post.call_args.kwargs.get("attachment") is None
+        assert api.wall.post.call_args.kwargs.get("attachments") is None
 
     def test_vk_error_raises(self, publisher, vk_session_mock):
         """Ошибка VK должна подниматься как VKError."""
